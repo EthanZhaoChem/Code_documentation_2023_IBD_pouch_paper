@@ -1,0 +1,239 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(limma)
+library(edgeR)
+library(variancePartition)
+library(BiocParallel)
+library(tidyverse)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+source('/project/gca/yuzhao1/scripts/seurat/deg_pseudobulk.R')
+out.dir <- '/project/gca/yuzhao1/work/manu/rc2/plots/'
+```
+
+```{r, include = F, eval=F}
+epithelial <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/epithelial3.rds')
+tcell <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/tcell2.rds')
+bcell <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/bcell3.rds')
+myeloid <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/myeloid3.rds')
+others <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/others3.rds')
+```
+
+
+
+### Epithelial EC1 vs EC2
+
+```{r}
+seurat <- epithelial
+seurat$anno1[seurat$anno1 %in% c("EC1-1", "EC1-2")] <- 'EC1'
+seurat$anno1[seurat$anno1 %in% c("EC2-1", "EC2-2")] <- 'EC2'
+```
+
+```{r}
+union_EC1vsEC2 <- FindMarkers(seurat, ident.1 = 'EC1', ident.2 = 'EC2', group.by = 'anno1', logfc.threshold = 0)
+```
+
+```{r}
+View(union_EC1vsEC2)
+```
+
+```{r}
+saveRDS(union_EC1vsEC2 ,'~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/wilcoxon/union_EC1vsEC2.rds')
+```
+
+```{r}
+# pathway enrichment
+source('~/yuzhao1/scripts/deg_dep_utils.R')
+de_results  <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/wilcoxon/union_EC1vsEC2.rds')
+
+fclist <- de_results[de_results$p_val_adj < 0.05,]
+Res <- myEnrichGSEA_msigdb(GetGenelist(fclist))  ## return a list; each element is a msigdb set (e.g. C8)
+resDf <- do.call("rbind", lapply(Res, function(sobj) sobj@result))
+
+saveRDS(resDf ,'~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/wilcoxon/resDf_union_EC1vsEC2.rds')
+
+```
+
+```{r}
+resDf <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/wilcoxon/resDf_union_EC1vsEC2.rds')
+View(resDf)
+```
+
+
+
+### Epithelial PP1 vs TI/ PP vs TI is using the same block, but changed PP1/PP2 to PP (code modified)
+
+```{r}
+seurat <- epithelial
+seurat$anno1[seurat$anno1 %in% c("EC1-1", "EC1-2") & seurat$biopsy_location =='POU'] <- 'EC-POU1'
+seurat$anno1[seurat$anno1 %in% c("EC2-1", "EC2-2") & seurat$biopsy_location =='POU'] <- 'EC-POU2'
+seurat$anno1[seurat$anno1 %in% c("EC1-1", "EC1-2") & seurat$biopsy_location =='PP'] <- 'EC-PP1'
+seurat$anno1[seurat$anno1 %in% c("EC2-1", "EC2-2") & seurat$biopsy_location =='PP'] <- 'EC-PP2'
+seurat$anno1[seurat$anno1 %in% c("EC1-1", "EC1-2", "EC2-1", "EC2-2") & seurat$biopsy_location =='TI'] <- 'EC-TI'
+seurat$anno1[seurat$anno1 %in% c("EC1-1", "EC1-2", "EC2-1", "EC2-2") & seurat$biopsy_location =='AC'] <- 'EC-AC'
+unique(seurat$anno1)
+```
+
+```{r}
+EC_PP1vsTI <- FindMarkers(seurat, ident.1 = 'EC-PP1', ident.2 = 'EC-TI', group.by = 'anno1', logfc.threshold = 0)
+```
+
+```{r}
+View(EC_PP1vsTI)
+```
+
+
+```{r}
+saveRDS(EC_PPvsTI ,'~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/wilcoxon/EC_PP1vsTI.rds')
+```
+
+```{r}
+# pathway enrichment
+source('~/yuzhao1/scripts/deg_dep_utils.R')
+de_results  <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/wilcoxon/EC_PP1vsTI.rds')
+```
+
+
+```{r}
+fclist <- de_results[de_results$p_val_adj < 0.05,]
+Res <- myEnrichGSEA_msigdb(GetGenelist(fclist))  ## return a list; each element is a msigdb set (e.g. C8)
+resDf <- do.call("rbind", lapply(Res, function(sobj) sobj@result))
+
+saveRDS(resDf ,'~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/wilcoxon/resDf_EC_PP1vsTI.rds')
+
+```
+
+```{r}
+resDf <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/wilcoxon/resDf_EC_PP1vsTI.rds')
+View(resDf)
+```
+
+
+
+
+### Epithelial POU2 vs AC
+
+```{r}
+seurat <- epithelial
+seurat$anno1[seurat$anno1 %in% c("EC1-1", "EC1-2") & seurat$biopsy_location =='POU'] <- 'EC-POU1'
+seurat$anno1[seurat$anno1 %in% c("EC2-1", "EC2-2") & seurat$biopsy_location =='POU'] <- 'EC-POU2'
+seurat$anno1[seurat$anno1 %in% c("EC1-1", "EC1-2", "EC2-1", "EC2-2") & seurat$biopsy_location =='PP'] <- 'EC-PP'
+seurat$anno1[seurat$anno1 %in% c("EC1-1", "EC1-2", "EC2-1", "EC2-2") & seurat$biopsy_location =='TI'] <- 'EC-TI'
+seurat$anno1[seurat$anno1 %in% c("EC1-1", "EC1-2", "EC2-1", "EC2-2") & seurat$biopsy_location =='AC'] <- 'EC-AC'
+```
+
+```{r}
+POU_EC2vsAC <- FindMarkers(seurat, ident.1 = 'EC-POU2', ident.2 = 'EC-AC', group.by = 'anno1', logfc.threshold = 0)
+```
+
+```{r}
+View(POU_EC2vsAC)
+```
+
+```{r}
+saveRDS(POU_EC2vsAC ,'~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/wilcoxon/POU_EC2vsAC.rds')
+```
+
+```{r}
+# pathway enrichment
+source('~/yuzhao1/scripts/deg_dep_utils.R')
+de_results  <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/wilcoxon/POU_EC2vsAC.rds')
+
+fclist <- de_results[de_results$p_val_adj < 0.05,]
+Res <- myEnrichGSEA_msigdb(GetGenelist(fclist))  ## return a list; each element is a msigdb set (e.g. C8)
+resDf <- do.call("rbind", lapply(Res, function(sobj) sobj@result))
+
+saveRDS(resDf ,'~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/wilcoxon/resDf_POU_EC2vsAC.rds')
+
+```
+
+```{r}
+resDf <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/wilcoxon/resDf_POU_EC2vsAC.rds')
+View(resDf)
+```
+
+
+
+
+
+### Epithelial POU1 vs AC
+
+```{r}
+seurat <- epithelial
+seurat$anno1[seurat$anno1 %in% c("EC1-1", "EC1-2") & seurat$biopsy_location =='POU'] <- 'EC-POU1'
+seurat$anno1[seurat$anno1 %in% c("EC2-1", "EC2-2") & seurat$biopsy_location =='POU'] <- 'EC-POU2'
+seurat$anno1[seurat$anno1 %in% c("EC1-1", "EC1-2", "EC2-1", "EC2-2") & seurat$biopsy_location =='PP'] <- 'EC-PP'
+seurat$anno1[seurat$anno1 %in% c("EC1-1", "EC1-2", "EC2-1", "EC2-2") & seurat$biopsy_location =='TI'] <- 'EC-TI'
+seurat$anno1[seurat$anno1 %in% c("EC1-1", "EC1-2", "EC2-1", "EC2-2") & seurat$biopsy_location =='AC'] <- 'EC-AC'
+```
+
+```{r}
+POU_EC1vsAC <- FindMarkers(seurat, ident.1 = 'EC-POU1', ident.2 = 'EC-AC', group.by = 'anno1', logfc.threshold = 0)
+```
+
+```{r}
+View(POU_EC1vsAC)
+```
+
+```{r}
+saveRDS(POU_EC1vsAC ,'~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/wilcoxon/POU_EC1vsAC.rds')
+```
+
+```{r}
+# pathway enrichment
+source('~/yuzhao1/scripts/deg_dep_utils.R')
+de_results  <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/wilcoxon/POU_EC1vsAC.rds')
+
+fclist <- de_results[de_results$p_val_adj < 0.05,]
+Res <- myEnrichGSEA_msigdb(GetGenelist(fclist))  ## return a list; each element is a msigdb set (e.g. C8)
+resDf <- do.call("rbind", lapply(Res, function(sobj) sobj@result))
+
+saveRDS(resDf ,'~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/wilcoxon/resDf_POU_EC1vsAC.rds')
+
+```
+
+```{r}
+resDf <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/wilcoxon/resDf_POU_EC1vsAC.rds')
+View(resDf)
+```
+
+
+### Epithelial pouch EC1 vs TI
+
+```{r}
+seurat <- epithelial
+seurat$anno1[seurat$anno1 %in% c("EC1-1", "EC1-2") & seurat$biopsy_location =='POU'] <- 'EC-POU1'
+seurat$anno1[seurat$anno1 %in% c("EC2-1", "EC2-2") & seurat$biopsy_location =='POU'] <- 'EC-POU2'
+seurat$anno1[seurat$anno1 %in% c("EC1-1", "EC1-2", "EC2-1", "EC2-2") & seurat$biopsy_location =='PP'] <- 'EC-PP'
+seurat$anno1[seurat$anno1 %in% c("EC1-1", "EC1-2", "EC2-1", "EC2-2") & seurat$biopsy_location =='TI'] <- 'EC-TI'
+seurat$anno1[seurat$anno1 %in% c("EC1-1", "EC1-2", "EC2-1", "EC2-2") & seurat$biopsy_location =='AC'] <- 'EC-AC'
+```
+
+```{r}
+xx <- FindMarkers(seurat, ident.1 = 'EC-POU1', ident.2 = 'EC-TI', group.by = 'anno1', logfc.threshold = 0)
+```
+
+
+```{r}
+saveRDS(xx ,'~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/wilcoxon/pouch_EC1vsTI.rds')
+```
+
+
+
+

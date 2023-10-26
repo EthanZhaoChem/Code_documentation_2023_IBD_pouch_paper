@@ -1,0 +1,112 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(limma)
+library(edgeR)
+library(variancePartition)
+library(BiocParallel)
+library(tidyverse)
+
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+source('/project/gca/yuzhao1/scripts/seurat/deg_pseudobulk.R')
+out.dir <- '/project/gca/yuzhao1/work/manu/rc2/plots/'
+```
+
+```{r, include = F, eval=F}
+# union <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/gut_filtered.rds')
+epithelial <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/epithelial3.rds')
+```
+
+### PP_EC1vsPOU_EC1
+
+```{r}
+seurat <- subset(epithelial, cells = Cells(epithelial)[epithelial$anno1 %in% c('Goblet1', 'Goblet2')])
+seurat$anno1[seurat$anno1 %in% c('Goblet1') & seurat$biopsy_location =='POU'] <- 'Goblet-POU1'
+seurat$anno1[seurat$anno1 %in% c('Goblet2') & seurat$biopsy_location =='POU'] <- 'Goblet-POU2'
+seurat$anno1[seurat$anno1 %in% c('Goblet1') & seurat$biopsy_location =='PP'] <- 'Goblet-PP'
+seurat$anno1[seurat$anno1 %in% c('Goblet2') & seurat$biopsy_location =='PP'] <- 'Goblet-PP'
+seurat$anno1[seurat$anno1 %in% c('Goblet1', 'Goblet2') & seurat$biopsy_location =='TI'] <- 'Goblet-TI'
+seurat$anno1[seurat$anno1 %in% c('Goblet1', 'Goblet2') & seurat$biopsy_location =='AC'] <- 'Goblet-AC'
+```
+
+
+```{r}
+seurat <- subset(seurat, cells = Cells(seurat)[seurat$anno1 %in% c('Goblet-POU2', 'Goblet-AC')])
+seurat$anno1.sub <- paste0(seurat$biopsy_location,'_',seurat$anno1)
+seurat$anno1 <- 'Goblet'
+unique(seurat$anno1)
+unique(seurat$anno1.sub)
+table(seurat@meta.data[, c('Patient_ID', 'anno1.sub')])
+```
+
+```{r}
+# add metadata
+metadata <- read.csv('~/yuzhao1/work/final_RC2rna/metadata/supp_table1.csv')
+seurat$age <- mapvalues(seurat$Patient_ID, from = metadata$Patient.ID, metadata$Age) %>% as.numeric()
+seurat$gender <- mapvalues(seurat$Patient_ID, from = metadata$Patient.ID, metadata$Gender)
+```
+
+```{r}
+de_results <- de_genes(seurat_input = seurat,
+                                 classification = 'anno1',
+                                 model_formula = ~  anno1.sub,
+                                 maineffect = 'anno1.sub',
+                                 pseudo_factors = c('anno1.sub', 'Patient_ID'))
+```
+
+```{r}
+de_results[["Goblet"]] = eBayes(de_results[["Goblet"]])
+saveRDS(de_results ,'~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/goblet/de_results_pou2vsAC_bulk.rds')
+```
+
+```{r}
+# pathway enrichment
+source('~/yuzhao1/scripts/deg_dep_utils.R')
+de_results <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/goblet/de_results_pou2vsAC_bulk.rds')
+
+# prepare for enrichment (p<0.05)
+fclist <- topTable(
+  de_results[["Goblet"]],
+  coef="anno1.subPOU_Goblet-POU2",
+  p.value = 0.05,
+  sort.by = 'logFC',
+  number = 10000
+)
+
+Res <- myEnrichGSEA_msigdb(GetGenelist(fclist))  ## return a list; each element is a msigdb set (e.g. C8)
+resDf <- do.call("rbind", lapply(Res, function(sobj) sobj@result))
+
+saveRDS(resDf ,'~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/goblet/pathway_pou2vsAC_bulk.rds')
+```
+
+```{r}
+resDf <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/pseudobulk/resDf_pou2vsAC_bulk.rds')
+View(resDf)
+```
+
+
+
+
+
+
+
+
+
+
+

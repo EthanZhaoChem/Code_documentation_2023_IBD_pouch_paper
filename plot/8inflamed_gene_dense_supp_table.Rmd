@@ -1,0 +1,268 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(ArchR)
+library(parallel)
+library(BSgenome.Hsapiens.UCSC.hg38)
+library(ComplexHeatmap)
+source('~/yuzhao1/scripts/plot.R')
+source('~/yuzhao1/work/manu/rc2/scripts/helper_seurat.R')
+source('~/yuzhao1/scripts/seurat/deg_pseudobulk.R')
+```
+
+```{r, include = F, eval=F}
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('~/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+source('~/yuzhao1/work/manu/rc2/scripts/rna_deg_markers.R')
+source('~/yuzhao1/scripts/helper_archr.R')
+source('~/yuzhao1/work/manu/rc2/scripts/tfs.R')
+```
+
+```{r, include = F, eval=F}
+union <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/gut_filtered.rds')
+seurat <- subset(union, cells = Cells(union)[union$anno1 %in% c('EC1-1', 'EC1-2', "EC2-1", "EC2-2")])
+seurat$anno1_loc <- factor(seurat$anno1_loc, levels = c('EC-AC', 'EC-POU2', 'EC-POU1', 'EC-PP', 'EC-TI'))
+
+seurat2 <- subset(union, cells = Cells(union)[union$anno1 %in% c('Goblet1', 'Goblet2')])
+seurat2$anno1[seurat2$anno1 %in% c("Goblet1") & seurat2$biopsy_location =='POU'] <- 'Goblet-POU1'
+seurat2$anno1[seurat2$anno1 %in% c("Goblet2") & seurat2$biopsy_location =='POU'] <- 'Goblet-POU2'
+seurat2$anno1[seurat2$anno1 %in% c("Goblet1", "Goblet2") & seurat2$biopsy_location =='PP'] <- 'Goblet-PP'
+seurat2$anno1[seurat2$anno1 %in% c("Goblet1", "Goblet2") & seurat2$biopsy_location =='TI'] <- 'Goblet-TI'
+seurat2$anno1[seurat2$anno1 %in% c("Goblet1", "Goblet2") & seurat2$biopsy_location =='AC'] <- 'Goblet-AC'
+
+out.dir <- '~/yuzhao1/work/manu/rc2/plots/8inflamed_gene_dense/'
+```
+
+
+### 1, prepare gene sets
+
+```{r}
+# to highlight
+genes.ec.highlight <- c('OLFM4', 'REG4', 'REG1A', 'DMBT1', 'MUC2', 'LYZ', 'AC138305.1','SERPINB5', 
+'SPINK4', 'S100P', 'TFF3', 'PLA2G2A', 'MACROD1', 'NXPE1', 'MYO5C', 
+'ANKDD1B', 'CCDC112', 'CASD1', 'LHFPL3', 'TACC1', 'HMGCS2', 
+'SELENBP1', 'SATB2', 'NXPE4', 'VSIG2', 'CKB', 'CA12', 'RBFOX1', 'AQP8', 'XACT', 
+'MS4A12', 'CEACAM7', 'CA1')
+
+genes.gb.highlight <- c('LYZ', 'OLFM4', 'DMBT1', 'REG1A', 'HSPA5', 'CALR', 'HSP90B1', 'SDF2L1', 'PDIA4',
+'S100P', 'FKBP11', 'S100A16', 'SEC11C', 'HMGCS2', 'IQCM', 'CAMK1D', 'EDIL3', 'VSIG2', 'XACT', 'CNTN4', 'RBFOX1', 'C10orf99', 'SETBP1', 'EFNA5', 'PPM1L', 'SEMA5A', 'PDIA3', 'CKB', 'B4GALNT2',
+'AC019330.1', 'LHFPL3', 'FOXO1')
+```
+
+
+```{r}
+# get absorptive inflammation and healthy module from smillie data
+deg <- read.csv('~/yuzhao1/work/final_RC2rna/inf_analysis/inf_ec_module.csv')
+xx <- deg[deg$ident %in% c('E.Absorptive', 'E.Absorptive_All', "E.Immature_Enterocytes", 
+                           "Enterocyte Progenitors" ,"Enterocytes", "Immature Enterocytes 1",
+                           "Immature Enterocytes 2") & deg$log2fc > 1, ]
+genes.smillie_absorptive_upregulated <- unique(xx$gene)
+
+xx <- deg[deg$ident %in% c('E.Absorptive', 'E.Absorptive_All', "E.Immature_Enterocytes", 
+                           "Enterocyte Progenitors" ,"Enterocytes", "Immature Enterocytes 1",
+                           "Immature Enterocytes 2") & deg$log2fc < -1, ]
+genes.smillie_absorptive_downregulated <- unique(xx$gene)
+```
+
+```{r}
+# get secretory inflammation and healthy module from smillie data
+deg <- read.csv('~/yuzhao1/work/final_RC2rna/inf_analysis/inf_ec_module.csv')
+xx <- deg[deg$ident %in% c('E.Secretory', "E.Secretory_All", "Goblet", "Immature Goblet") & deg$log2fc > 1, ]
+genes.smillie_secretory_upregulated <- unique(xx$gene)
+
+xx <- deg[deg$ident %in% c('E.Secretory', "E.Secretory_All", "Goblet", "Immature Goblet") & deg$log2fc < -1, ]
+genes.smillie_secretory_downregulated <- unique(xx$gene)
+```
+
+```{r}
+# EC modules
+# get inflammation and healthy module from pouch EC2 vs AC
+de_results  <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/pseudobulk/de_results_pou2vsAC_bulk.rds')
+
+fclist <- topTable(
+  de_results[["EC"]],
+  coef = "anno1.subPOU_EC-POU2",
+  p.value = 1000000,
+  sort.by = 'logFC',
+  number = 30000
+)
+
+df <- fclist[, c('logFC', 'adj.P.Val')]
+colnames(df) <- c('logFC', 'p_val_adj')
+
+genes_pouch_ec2 <- rownames(df[df$p_val_adj<0.05 & df$logFC > 1, ])
+genes_ac_ec <- rownames(df[df$p_val_adj<0.05 & df$logFC < -1, ])
+
+# to help rank by logFC inside each chunk
+df_ec_logFC_ref <- df[c(genes_pouch_ec2, genes_ac_ec), ]
+```
+
+
+```{r}
+# Goblet modules
+# get inflammation and healthy module from pouch EC2 vs AC
+de_results  <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/goblet/de_results_pou2vsAC_bulk.rds')
+fclist <- topTable(
+  de_results[["Goblet"]],
+  coef = "anno1.subPOU_Goblet-POU2",
+  p.value = 1000000,
+  sort.by = 'logFC',
+  number = 30000
+)
+df <- fclist[, c('logFC', 'adj.P.Val')]
+colnames(df) <- c('logFC', 'p_val_adj')
+
+genes_pouch_goblet2 <- rownames(df[df$p_val_adj<0.05 & df$logFC > 1, ])
+genes_ac_goblet <- rownames(df[df$p_val_adj<0.05 & df$logFC < -1, ])
+
+# to help rank by logFC inside each chunk
+df_goblet_logFC_ref <- df[c(genes_pouch_ec2, genes_ac_ec), ]
+```
+
+```{r}
+# extra annotation: genes in AC vs TI
+markers <- readRDS('~/yuzhao1/work/final_RC2rna/deg/epithelial/ec/markers_filtered_logFC1_p0.05.rds')
+temp <- markers[["TIvsAC"]]
+refgene_TIvsAC <- rownames(temp)[temp[['logFC']] > 1]
+refgene_ACvsTI <- rownames(temp)[temp[['logFC']] < -1]
+
+# precomputed in ~/yuzhao1/work/final_RC2rna/deg/5Goblet: AAsummary.Rmd
+genes.goblet <- readRDS('~/yuzhao1/work/manu/rc2/plots/2rna_deg/goblet/genes_goblet.rds') 
+refgene_TIvsAC_goblet <- genes.goblet$TIvsAC
+refgene_ACvsTI_goblet <- genes.goblet$ACvsTI
+```
+
+### 2, summarize gene sets
+
+```{r}
+# # 1, EC
+# genes_pouch_ec2_shared <- intersect(genes_pouch_ec2, genes.smillie_absorptive_upregulated)
+# 
+# genes_pouch_ec2_unique <- setdiff(genes_pouch_ec2, genes.smillie_absorptive_upregulated)
+# 
+# genes_ac_ec_shared <- intersect(genes_ac_ec, genes.smillie_absorptive_downregulated)
+# 
+# genes_ac_ec_unique <- setdiff(genes_ac_ec, genes.smillie_absorptive_downregulated)
+```
+
+```{r}
+# # 2, Goblet
+# genes_pouch_goblet2_shared <- intersect(genes_pouch_goblet2, genes.smillie_secretory_upregulated)
+# 
+# genes_pouch_goblet2_unique <- setdiff(genes_pouch_goblet2, genes.smillie_secretory_upregulated)
+# 
+# genes_ac_goblet_shared <- intersect(genes_ac_goblet, genes.smillie_secretory_downregulated)
+# 
+# genes_ac_goblet_unique <- setdiff(genes_ac_goblet, genes.smillie_secretory_downregulated)
+
+```
+
+
+### 3, plot EC
+
+```{r}
+# split genes in to 8 blocks by three standard(pouchEC2 vs AC, Smillie, TI vs AC)
+df <- as.data.frame(matrix(nrow = length(c(genes_pouch_ec2, genes_ac_ec)),
+                           data = 'NA',
+                           ncol = 3))
+colnames(df) <- c('pouchEC2 vs AC-EC', 'Smillie data', 'TI-EC vs AC-EC')
+rownames(df) <- c(genes_pouch_ec2, genes_ac_ec)
+
+# up-regulated in pouch (1) or down-regulated (0)
+df[genes_pouch_ec2, 1] <- 'Upregulated in pouch EC2'
+df[genes_ac_ec, 1] <- 'Upregulated in AC EC'
+
+# smillie inf (1) or non-inf (2)
+df[intersect(c(genes.smillie_absorptive_upregulated),
+             rownames(df)), 2] <- 'Inflammatory genes in abosorptive lineage in Smillie et al.'
+
+df[intersect(c(genes.smillie_absorptive_downregulated),
+             rownames(df)), 2] <- 'Healthy genes in abosorptive lineage in Smillie et al.'
+
+# shared with TI vs AC degs
+df[intersect(refgene_TIvsAC, rownames(df)), 3] <- 'Upregulated in TI-EC vs AC-EC'
+df[intersect(refgene_ACvsTI, rownames(df)), 3] <- 'Upregulated in AC-EC vs TI-EC'
+
+# logFC in pouchEC2 vs AC
+df[['pouch2vsAC-EC_logFC']] <- df_ec_logFC_ref[rownames(df), 'logFC']
+
+
+# sort inside each category
+df <- df[order(-df['pouch2vsAC-EC_logFC']), ]
+
+write.csv(df, '~/yuzhao1/work/manu/rc2/tables/pouch2vsAC_EC.csv')
+```
+
+
+
+
+
+
+### heatmap GB
+
+```{r}
+# split genes in to 8 blocks by three standard(pouchEC2 vs AC, Smillie, TI vs AC)
+df <- as.data.frame(matrix(nrow = length(c(genes_pouch_goblet2, genes_ac_goblet)),
+                           data = 'NA',
+                           ncol = 3))
+colnames(df) <- c('pouchGoblet2vsAC-Goblet', 'Smillie data', 'TI-Goblet vs AC-Goblet')
+rownames(df) <- c(genes_pouch_goblet2, genes_ac_goblet)
+
+# up-regulated in pouch (1) or down-regulated (0)
+df[genes_pouch_goblet2, 1] <- 'Upregulated in pouch Goblet2'
+df[genes_ac_goblet, 1] <- 'Upregulated in AC Goblet'
+
+# pouch shared with inf (1) or ac shared with non-inf (2)
+df[intersect(c(genes.smillie_secretory_upregulated),
+             rownames(df)), 2] <- 'Inflammatory genes in secretory lineage in Smillie et al.'
+
+df[intersect(c(genes.smillie_secretory_downregulated),
+             rownames(df)), 2] <- 'Healthy genes in secretory lineage in Smillie et al.'
+
+# shared with TI vs AC degs
+df[intersect(refgene_TIvsAC_goblet, rownames(df)), 3] <- 'Upregulated in TI-Goblet vs AC-Goblet'
+df[intersect(refgene_ACvsTI_goblet, rownames(df)), 3] <- 'Upregulated in AC-Goblet vs TI-Goblet'
+
+# logFC in pouchEC2 vs AC
+df[['pouch_Goblet2vsAC-Goblet_logFC']] <- df_goblet_logFC_ref[rownames(df), 'logFC']
+
+
+df <- df[order(-df['pouch_Goblet2vsAC-Goblet_logFC']), ]
+
+write.csv(df, '~/yuzhao1/work/manu/rc2/tables/pouch2vsAC_Goblet.csv')
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

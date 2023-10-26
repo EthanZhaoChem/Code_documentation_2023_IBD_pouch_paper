@@ -1,0 +1,384 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(Seurat)
+library(ArchR)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+source('~/yuzhao1/work/final_GCAatac/scripts/gca_colors.R')
+source('~/yuzhao1/work/final_GCArna/scripts/gca_markers.R')
+out.dir <- '/project/gca/yuzhao1/work/manu/rc2/plots/4atac_MarkerPeaks_TFs_PairWise/'
+tf_names <- readRDS('~/yuzhao1/work/manu/rc2/plots/6tf_logo/tf_names.rds')
+```
+
+```{r}
+proj <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_epithelial_filtered2/")
+```
+
+```{r}
+DARs <- readRDS('~/yuzhao1/work/final_RC2atac/peaks/3DARs/DARs_EC.rds')
+```
+
+
+# plot pairwise test
+## 1. EC ACvsTI
+```{r}
+markersPeaks <- DARs$EC_ACvsTI
+first_contrast <- markersPeaks@colData@rownames[[1]]
+plot.name <- paste0('EC_ACvsTI', '.pdf')
+
+pma <- markerPlot(seMarker = markersPeaks, name = first_contrast, cutOff = "FDR <= 0.01 & abs(Log2FC) >= 1", plotAs = "MA")
+pv <- markerPlot(seMarker = markersPeaks, name = first_contrast, cutOff = "FDR <= 0.01 & abs(Log2FC) >= 1", plotAs = "Volcano")
+```
+
+```{r}
+plotPDF(pma, pv, name = plot.name, width = 5, height = 5, ArchRProj = proj, addDOC = FALSE)
+file.copy(from = paste0(proj@projectMetadata$outputDirectory, '/Plots/', plot.name),
+          to = paste0(out.dir, plot.name))
+```
+
+```{r}
+# ti
+motifsUp <- peakAnnoEnrichment(
+    seMarker = markersPeaks,
+    ArchRProj = proj,
+    peakAnnotation = "Motif",
+    cutOff = "FDR <= 0.01 & Log2FC >= 1"
+  )
+
+df <- data.frame(TF = rownames(motifsUp), mlog10Padj = assay(motifsUp)[,1])
+df <- df[order(df$mlog10Padj, decreasing = TRUE),]
+df$rank <- seq_len(nrow(df))
+
+ggUp <- ggplot(df, aes(rank, mlog10Padj, color = mlog10Padj)) + 
+  geom_point(size = 1) +
+  ggrepel::geom_label_repel(
+        data = df[rev(seq_len(30)), ], aes(x = rank, y = mlog10Padj, label = TF), 
+        size = 3,
+        nudge_x = 2,
+        color = "black"
+  ) + theme_ArchR() + 
+  ylab("-log10(P-adj) Motif Enrichment") + 
+  xlab("Rank Sorted TFs Enriched") +
+  scale_color_gradientn(colors = paletteContinuous(set = "comet"))
+
+# ac
+motifsDo <- peakAnnoEnrichment(
+    seMarker = markersPeaks,
+    ArchRProj = proj,
+    peakAnnotation = "Motif",
+    cutOff = "FDR <= 0.01 & Log2FC <= -1"
+  )
+
+df <- data.frame(TF = rownames(motifsDo), mlog10Padj = assay(motifsDo)[,1])
+df <- df[order(df$mlog10Padj, decreasing = TRUE),]
+df$rank <- seq_len(nrow(df))
+
+ggDo <- ggplot(df, aes(rank, mlog10Padj, color = mlog10Padj)) + 
+  geom_point(size = 1) +
+  ggrepel::geom_label_repel(
+        data = df[rev(seq_len(30)), ], aes(x = rank, y = mlog10Padj, label = TF), 
+        size = 3,
+        nudge_x = 2,
+        color = "black"
+  ) + theme_ArchR() + 
+  ylab("-log10(FDR) Motif Enrichment") +
+  xlab("Rank Sorted TFs Enriched") +
+  scale_color_gradientn(colors = paletteContinuous(set = "comet"))
+
+# plot
+pdf(paste0(out.dir, celltype, '.pdf'), width = 5, height = 5)
+ggUp
+ggDo
+dev.off()
+```
+
+
+
+## 2. EC2 vs EC1
+
+
+```{r}
+markersPeaks <- readRDS('~/yuzhao1/work/final_RC2atac/peaks/3DARs/DARs_EC_extra_EC2vsEC1.rds')
+```
+
+```{r}
+first_contrast <- markersPeaks@colData@rownames[[1]]
+plot.name <- paste0('EC2vsEC1', '.pdf')
+temp_lineage <- 'epithelial'
+proj <- paste0('proj_', temp_lineage) %>% as.name(.) %>% eval(.)
+
+pma <- markerPlot(seMarker = markersPeaks, name = first_contrast, cutOff = "FDR <= 0.01 & abs(Log2FC) >= 1", plotAs = "MA")
+pv <- markerPlot(seMarker = markersPeaks, name = first_contrast, cutOff = "FDR <= 0.01 & abs(Log2FC) >= 1", plotAs = "Volcano")
+```
+
+```{r}
+plotPDF(pma, pv, name = plot.name, width = 5, height = 5, ArchRProj = proj, addDOC = FALSE)
+file.copy(from = paste0(proj@projectMetadata$outputDirectory, '/Plots/', plot.name),
+          to = paste0(out.dir, plot.name))
+```
+
+## 2.1 pouch EC2 vs pouch EC1
+
+
+```{r}
+markersPeaks <- DARs$EC_POU2vsPOU1
+```
+
+```{r}
+first_contrast <- markersPeaks@colData@rownames[[1]]
+plot.name <- paste0('pouch EC2vs pouch EC1', '.pdf')
+temp_lineage <- 'epithelial'
+
+pma <- markerPlot(seMarker = markersPeaks, name = first_contrast, cutOff = "FDR <= 0.01 & abs(Log2FC) >= 1", plotAs = "MA")
+pv <- markerPlot(seMarker = markersPeaks, name = first_contrast, cutOff = "FDR <= 0.01 & abs(Log2FC) >= 1", plotAs = "Volcano")
+```
+
+```{r}
+plotPDF(pma, pv, name = plot.name, width = 5, height = 5, ArchRProj = proj, addDOC = FALSE)
+file.copy(from = paste0(proj@projectMetadata$outputDirectory, '/Plots/', plot.name),
+          to = paste0(out.dir, plot.name))
+```
+
+## 2.2 pouch EC2 vs AC
+
+
+```{r}
+markersPeaks <- DARs$EC_POU2vsAC
+```
+
+```{r}
+first_contrast <- markersPeaks@colData@rownames[[1]]
+plot.name <- paste0('pouch EC2vs AC', '.pdf')
+temp_lineage <- 'epithelial'
+
+pma <- markerPlot(seMarker = markersPeaks, name = first_contrast, cutOff = "FDR <= 0.01 & abs(Log2FC) >= 1", plotAs = "MA")
+pv <- markerPlot(seMarker = markersPeaks, name = first_contrast, cutOff = "FDR <= 0.01 & abs(Log2FC) >= 1", plotAs = "Volcano")
+```
+
+```{r}
+plotPDF(pma, pv, name = plot.name, width = 5, height = 5, ArchRProj = proj, addDOC = FALSE)
+file.copy(from = paste0(proj@projectMetadata$outputDirectory, '/Plots/', plot.name),
+          to = paste0(out.dir, plot.name))
+```
+
+
+## 3. Goblet2 vs Goblet1
+
+```{r}
+markersPeaks <- getMarkerFeatures(
+  ArchRProj = proj, 
+  useMatrix = "PeakMatrix",
+  groupBy = 'anno2',
+  normBy = 'ReadsInTSS',
+  maxCells = 20000,
+  testMethod = "wilcoxon",
+  bias = c("TSSEnrichment", "log10(nFrags)"),
+  useGroups = 'Goblet2',
+  bgdGroups = 'Goblet1'
+)
+saveRDS(markersPeaks, '~/yuzhao1/work/final_RC2atac/peaks/3DARs/DARs_Goblet2vsGoblet1.rds')
+
+```
+
+```{r}
+first_contrast <- markersPeaks@colData@rownames[[1]]
+plot.name <- paste0('Goblet2vsGoblet1', '.pdf')
+temp_lineage <- 'epithelial'
+
+pma <- markerPlot(seMarker = markersPeaks, name = first_contrast, cutOff = "FDR <= 0.01 & abs(Log2FC) >= 1", plotAs = "MA")
+pv <- markerPlot(seMarker = markersPeaks, name = first_contrast, cutOff = "FDR <= 0.01 & abs(Log2FC) >= 1", plotAs = "Volcano")
+```
+
+```{r}
+plotPDF(pma, pv, name = plot.name, width = 5, height = 5, ArchRProj = proj, addDOC = FALSE)
+file.copy(from = paste0(proj@projectMetadata$outputDirectory, '/Plots/', plot.name),
+          to = paste0(out.dir, plot.name))
+```
+
+
+```{r}
+# ti
+motifsUp <- peakAnnoEnrichment(
+    seMarker = markersPeaks,
+    ArchRProj = proj,
+    peakAnnotation = "Motif",
+    cutOff = "FDR <= 0.01 & Log2FC >= 1"
+  )
+
+df <- data.frame(TF = rownames(motifsUp), mlog10Padj = assay(motifsUp)[,1])
+df <- df[order(df$mlog10Padj, decreasing = TRUE),]
+df$rank <- seq_len(nrow(df))
+
+df$tf.true <- mapvalues(df$TF, tf_names$tf_full, tf_names$tf)
+ggUp <- ggplot(df, aes(rank, mlog10Padj, color = mlog10Padj)) + 
+  geom_point(size = 1) +
+  ggrepel::geom_label_repel(
+        data = df[rev(seq_len(5)), ], aes(x = rank, y = mlog10Padj, label = tf.true), 
+        size = 3,
+        max.overlaps = 1000,
+        nudge_x = 2,
+        color = "black"
+  ) + theme_ArchR() + 
+  ylab("-log10(P-adj) Motif Enrichment") + 
+  xlab("Rank Sorted TFs Enriched") +
+  scale_color_gradientn(colors = paletteContinuous(set = "comet"))
+
+# ac
+motifsDo <- peakAnnoEnrichment(
+    seMarker = markersPeaks,
+    ArchRProj = proj,
+    peakAnnotation = "Motif",
+    cutOff = "FDR <= 0.01 & Log2FC <= -1"
+  )
+
+df <- data.frame(TF = rownames(motifsDo), mlog10Padj = assay(motifsDo)[,1])
+df <- df[order(df$mlog10Padj, decreasing = TRUE),]
+df$rank <- seq_len(nrow(df))
+
+df$tf.true <- mapvalues(df$TF, tf_names$tf_full, tf_names$tf)
+ggDo <- ggplot(df, aes(rank, mlog10Padj, color = mlog10Padj)) + 
+  geom_point(size = 1) +
+  ggrepel::geom_label_repel(
+        data = df[rev(seq_len(5)), ], aes(x = rank, y = mlog10Padj, label = tf.true), 
+        size = 3,
+        max.overlaps = 1000,
+        nudge_x = 2,
+        color = "black"
+  ) + theme_ArchR() + 
+  ylab("-log10(FDR) Motif Enrichment") +
+  xlab("Rank Sorted TFs Enriched") +
+  scale_color_gradientn(colors = paletteContinuous(set = "comet"))
+
+# plot
+pdf(paste0(out.dir, 'Goblet2vsGoblet1_TF.pdf'), width = 5, height = 5)
+ggUp
+ggDo
+dev.off()
+```
+
+
+
+
+
+## 3. Stem2 vs Stem1
+
+```{r}
+markersPeaks <- getMarkerFeatures(
+  ArchRProj = proj, 
+  useMatrix = "PeakMatrix",
+  groupBy = 'anno2',
+  normBy = 'ReadsInTSS',
+  maxCells = 20000,
+  testMethod = "wilcoxon",
+  bias = c("TSSEnrichment", "log10(nFrags)"),
+  useGroups = 'Stem2',
+  bgdGroups = 'Stem1'
+)
+saveRDS(markersPeaks, '~/yuzhao1/work/final_RC2atac/peaks/3DARs/DARs_Stem2vsStem1.rds')
+
+```
+
+```{r}
+first_contrast <- markersPeaks@colData@rownames[[1]]
+plot.name <- paste0('Stem2vsStem1', '.pdf')
+temp_lineage <- 'epithelial'
+
+pma <- markerPlot(seMarker = markersPeaks, name = first_contrast, cutOff = "FDR <= 0.01 & abs(Log2FC) >= 1", plotAs = "MA")
+pv <- markerPlot(seMarker = markersPeaks, name = first_contrast, cutOff = "FDR <= 0.01 & abs(Log2FC) >= 1", plotAs = "Volcano")
+```
+
+```{r}
+plotPDF(pma, pv, name = plot.name, width = 5, height = 5, ArchRProj = proj, addDOC = FALSE)
+file.copy(from = paste0(proj@projectMetadata$outputDirectory, '/Plots/', plot.name),
+          to = paste0(out.dir, plot.name))
+```
+
+
+```{r}
+# ti
+motifsUp <- peakAnnoEnrichment(
+    seMarker = markersPeaks,
+    ArchRProj = proj,
+    peakAnnotation = "Motif",
+    cutOff = "FDR <= 0.01 & Log2FC >= 1"
+  )
+
+df <- data.frame(TF = rownames(motifsUp), mlog10Padj = assay(motifsUp)[,1])
+df <- df[order(df$mlog10Padj, decreasing = TRUE),]
+df$rank <- seq_len(nrow(df))
+
+df$tf.true <- mapvalues(df$TF, tf_names$tf_full, tf_names$tf)
+ggUp <- ggplot(df, aes(rank, mlog10Padj, color = mlog10Padj)) + 
+  geom_point(size = 1) +
+  ggrepel::geom_label_repel(
+        data = df[rev(seq_len(5)), ], aes(x = rank, y = mlog10Padj, label = tf.true), 
+        size = 3,
+        max.overlaps = 1000,
+        nudge_x = 2,
+        color = "black"
+  ) + theme_ArchR() + 
+  ylab("-log10(P-adj) Motif Enrichment") + 
+  xlab("Rank Sorted TFs Enriched") +
+  scale_color_gradientn(colors = paletteContinuous(set = "comet"))
+
+# ac
+motifsDo <- peakAnnoEnrichment(
+    seMarker = markersPeaks,
+    ArchRProj = proj,
+    peakAnnotation = "Motif",
+    cutOff = "FDR <= 0.01 & Log2FC <= -1"
+  )
+
+df <- data.frame(TF = rownames(motifsDo), mlog10Padj = assay(motifsDo)[,1])
+df <- df[order(df$mlog10Padj, decreasing = TRUE),]
+df$rank <- seq_len(nrow(df))
+
+df$tf.true <- mapvalues(df$TF, tf_names$tf_full, tf_names$tf)
+ggDo <- ggplot(df, aes(rank, mlog10Padj, color = mlog10Padj)) + 
+  geom_point(size = 1) +
+  ggrepel::geom_label_repel(
+        data = df[rev(seq_len(5)), ], aes(x = rank, y = mlog10Padj, label = tf.true), 
+        size = 3,
+        max.overlaps = 1000,
+        nudge_x = 2,
+        color = "black"
+  ) + theme_ArchR() + 
+  ylab("-log10(FDR) Motif Enrichment") +
+  xlab("Rank Sorted TFs Enriched") +
+  scale_color_gradientn(colors = paletteContinuous(set = "comet"))
+
+# plot
+pdf(paste0(out.dir, 'Stem2vsStem1_TF.pdf'), width = 5, height = 5)
+ggUp
+ggDo
+dev.off()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

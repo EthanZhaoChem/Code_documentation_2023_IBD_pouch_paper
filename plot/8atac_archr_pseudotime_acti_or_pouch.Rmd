@@ -1,0 +1,331 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(limma)
+library(edgeR)
+library(variancePartition)
+library(BiocParallel)
+library(tidyverse)
+library(ComplexHeatmap)
+library(ArchR)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_deg_markers.R')
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/tfs.R')
+
+```
+
+```{r}
+out.dir <- '/project/gca/yuzhao1/work/manu/rc2/plots/8atac_archr_pseudotime/'
+```
+
+```{r}
+proj <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_epithelial_filtered2_EC_Stem_ACTI_version2/")
+# proj <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_epithelial_filtered2_EC_Stem_POU_version2/")
+```
+
+
+```{r}
+original_umap <- read.table('/project/gca/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_epithelial_filtered2_EC_Stem/harmony_umap.csv'
+                            ,sep = ',', header = T, row.names = 1)
+rownames(original_umap) <- original_umap$cell
+
+proj@embeddings$Harmony_UMAP$df$`Harmony#UMAP_Dimension_1` <- original_umap[proj$cellNames, 'umap1']
+proj@embeddings$Harmony_UMAP$df$`Harmony#UMAP_Dimension_2` <- original_umap[proj$cellNames, 'umap2']
+
+proj@embeddings$UMAP$df$`IterativeLSI#UMAP_Dimension_1` <- original_umap[proj$cellNames, 'umap1']
+proj@embeddings$UMAP$df$`IterativeLSI#UMAP_Dimension_2` <- original_umap[proj$cellNames, 'umap2']
+```
+
+# 1. plot umap with annotation
+
+```{r}
+custom_colors_epithelial <- c("Stem1" = '#fccde5', 
+                                  "Stem2" = '#e7298a', 
+                                  "TA_EC" = '#82c07f', 
+                                  "EC1-1" = '#9ecae1',
+                                  "EC1-2" = '#4292c6',
+                                  "EC2-1" = '#80cdc1',
+                                  "EC2-2" = '#35978f')
+
+df <- data.frame(proj@cellColData)
+df$embedding1 <- original_umap[proj$cellNames, 'umap1']
+df$embedding2 <- original_umap[proj$cellNames, 'umap2']
+df$cluster_name <- proj$anno2
+p<-plot_df_umap_custom(df, show.label = 'na', custom_colors = custom_colors_epithelial)
+
+pdf(paste0(out.dir, 'ec_umap.pdf'), width = 4.5, height = 5, pointsize = 1)
+p
+dev.off()
+```
+
+# 2. plot trajectory along Umap
+
+```{r}
+trajectory1 <- c("Stem1", "EC1-1", "EC1-2")
+proj <- addTrajectory(
+    ArchRProj = proj, 
+    name = "EC1", 
+    groupBy = "anno2",
+    reducedDims = "Harmony",
+    trajectory = trajectory1, 
+    embedding = "UMAP", 
+    force = TRUE
+)
+
+trajectory2 <- c("Stem2", "EC2-1", "EC2-2")
+proj <- addTrajectory(
+    ArchRProj = proj, 
+    name = "EC2", 
+    groupBy = "anno2",
+    reducedDims = "Harmony",
+    trajectory = trajectory2, 
+    embedding = "UMAP", 
+    force = TRUE
+)
+
+# saveArchRProject(proj, load = T)
+```
+
+
+```{r}
+library(viridis)
+magma_colors <- magma(100)
+custom_palette <- rev(magma_colors)
+df <- data.frame(proj@cellColData)
+df$embedding1 <- original_umap[proj$cellNames, 'umap1']
+df$embedding2 <- original_umap[proj$cellNames, 'umap2']
+df$feature_to_plot <- df$EC2
+  
+# get the nonNAs to ensure a good color scale
+pseudotimes_nonNA.idx <- which(!is.na(df$feature_to_plot))
+pseudotimes_nonNAs <- df$feature_to_plot[pseudotimes_nonNA.idx]
+
+# make NA as 0 to avoid error
+df$feature_to_plot[is.na(df$feature_to_plot)] <- 0
+df$feature_to_plot[df$feature_to_plot > 1] <- 1
+
+# make color scale based on n-quantile of colors
+n_colors <- length(custom_palette)
+breaks <- seq(0, 1, length.out = n_colors + 1)
+labels <- head(breaks, -1) + diff(breaks) / 2
+
+# Assign pseudotime colors based on quantiles (points not in this lineage will be gray)
+df$color<- '#e0e0e0'
+color_bin_index <- cut(pseudotimes_nonNAs, 
+                       breaks = quantile(pseudotimes_nonNAs, probs = breaks), 
+                       labels = 1:n_colors, 
+                       include.lowest = TRUE)
+df$color[pseudotimes_nonNA.idx] <- custom_palette[as.numeric(color_bin_index)]
+
+  
+p <- ggplot(df, aes(x = embedding1, y = embedding2, color = color)) +
+  geom_point(size = 0.03) +
+  scale_color_identity() +
+  theme(panel.background = element_rect(fill = 'white', colour = 'black'),
+        panel.grid = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title = element_text(size = 12, face = 'bold'),
+        legend.key = element_blank(),
+        legend.title = element_blank(),
+        legend.position = "bottom",
+        legend.text = element_text(size = 12),
+        plot.margin = margin(2, 2, 2, 2, "cm"),
+        plot.title = element_text(size = 12, face = 'bold'))+
+  labs(x = "UMAP1", y = "UMAP2", title = "UMAP plot colored by pseudotime", color = "Pseudotime")
+
+pdf(paste0(out.dir, 'pseudotime_ec2.pdf'), width = 5, height = 5, pointsize = 1)
+print(p)
+dev.off()
+
+
+```
+
+
+# 3. plot TF along time
+
+```{r}
+cells_traj1_names <- proj$cellNames[!is.na(proj$EC1)]
+cells_traj1_times <- proj$EC1[!is.na(proj$EC1)]
+ordered_cells_ec1 <- cells_traj1_names[order(cells_traj1_times, decreasing = F)]
+
+cells_traj2_names <- proj$cellNames[!is.na(proj$EC2)]
+cells_traj2_times <- proj$EC2[!is.na(proj$EC2)]
+ordered_cells_ec2 <- cells_traj2_names[order(cells_traj2_times, decreasing = F)]
+```
+
+```{r}
+cisbp.mtx <- getMatrixFromProject(
+  ArchRProj = proj,
+  useMatrix = "cisbp",
+  useSeqnames = NULL,
+  verbose = TRUE,
+  binarize = FALSE,
+  threads = getArchRThreads(),
+  logFile = createLogFile("getMatrixFromProject")
+)
+
+cisbp.mtx.imputed <- imputeMatrix(
+  mat = cisbp.mtx@assays@data$z,
+  imputeWeights = getImputeWeights(proj),
+  threads = 1,
+  verbose = FALSE,
+  logFile = createLogFile("imputeMatrix")
+)
+
+```
+
+```{r}
+tf.fullnames <- cisbp.mtx@NAMES
+names(tf.fullnames) <- tf.fullnames %>% strsplit(split = '_', fixed=T) %>% sapply(.,`[[`,1)
+```
+
+
+
+```{r}
+# combined version (preserve original chromVAR z score)
+df <- cisbp.mtx.imputed[, ordered_cells_ec1]
+df <- as.matrix(df)
+rownames(df) <- rownames(df) %>% strsplit(split = '_', fixed=T) %>% sapply(.,`[[`,1)
+
+tf_genes_ordered2 <- rev(c('CDX1', 'FOXP1', 'KLF5', 'EHF',  'NFIA', 'GATA6',
+                      'BACH1', 'ESRRG', 'MAF', 'TBX3',
+                      'HNF4G',  'NR1H4', 'PPARA'))
+df <- df[tf_genes_ordered2,]
+pal <- ArchRPalettes$blueYellow
+col_fun = colorRamp2(seq(-2, 2, 4/(length(pal)-1)), pal)
+
+pdf(paste0(out.dir,  'TF_activity_EC1_lineage_original_ChromVAR.pdf'), width = 5, height = 6)
+p1 <- Heatmap(df, 
+              col = col_fun,
+              cluster_rows = F,
+              show_row_dend = F, show_column_dend = F, show_row_names = T,
+              cluster_columns = F, show_column_names = F, row_names_side = 'left',
+              
+              row_names_gp = gpar(fontsize = 8),
+              
+              row_title = NULL,
+              row_gap = unit(1, "mm"), column_gap = unit(0, "mm"), 
+              border = T,
+              border_gp = gpar(col = "black", lty = 1, lwd = 0.5),
+              
+              heatmap_legend_param = list(title = "ChromVAR z score"),
+              use_raster = F)
+
+
+print(p1)
+dev.off()
+
+```
+
+
+
+# 4. plot gene expression (GIM) along pseudo time
+
+
+```{r}
+# pouch1
+genes_to_plot <- readRDS('~/yuzhao1/work/manu/rc2/plots/8atac_DEGvsEnhancervsTF_network/pou1_PseudoGenesToPlot.rds')
+trajGIM1 <- getTrajectory(ArchRProj = proj, name = "EC1", useMatrix = "GeneIntegrationMatrix", log2Norm = TRUE)
+df <- data.frame(full = rownames(trajGIM1),
+                 gene = rownames(trajGIM1)%>%strsplit(split = ':', fixed=T) %>% sapply(.,`[[`,2))
+rownames(df) <- df$gene
+
+row_to_include <- df[genes_to_plot, 'full']
+seTrajectory <- trajGIM1[row_to_include]
+mat <- assay(seTrajectory)
+idx <- order(apply(mat, 1, which.max))
+             
+limits = c(-1.5, 1.5)
+mat <- sweep(mat - rowMeans(mat), 1, matrixStats::rowSds(mat), `/`)
+mat[mat > max(limits)] <- max(limits)
+mat[mat < min(limits)] <- min(limits)
+
+p <- ArchRHeatmap(
+      mat = mat[idx, ],
+      scale = FALSE,
+      limits = c(min(mat), max(mat)),
+      clusterCols = FALSE, 
+      clusterRows = FALSE,
+      labelRows = T,
+      labelCols = FALSE,
+      color = paletteContinuous(set = "solarExtra", n = 100),
+      # customRowLabel = match(idxLabel, rownames(mat[idx,])),
+      # showColDendrogram = TRUE,
+      # name = metadata(seTrajectory)$Params$useMatrix,
+      draw = FALSE
+    )
+
+pdf(paste0(out.dir, 'pseudotime_gim_ec1.pdf'), width = 5, height = 7, pointsize = 1)
+p
+dev.off()
+
+```
+
+
+```{r}
+genes_to_plot <- readRDS('~/yuzhao1/work/manu/rc2/plots/8atac_DEGvsEnhancervsTF_network/pou2_PseudoGenesToPlot.rds')
+
+trajGIM2 <- getTrajectory(ArchRProj = proj, name = "EC2", useMatrix = "GeneIntegrationMatrix", log2Norm = TRUE)
+df <- data.frame(full = rownames(trajGIM2),
+                 gene = rownames(trajGIM2)%>%strsplit(split = ':', fixed=T) %>% sapply(.,`[[`,2))
+rownames(df) <- df$gene
+
+
+row_to_include <- df[genes_to_plot, 'full']
+seTrajectory <- trajGIM2[row_to_include]
+mat <- assay(seTrajectory)
+idx <- order(apply(mat, 1, which.max))
+             
+limits = c(-1.5, 1.5)
+mat <- sweep(mat - rowMeans(mat), 1, matrixStats::rowSds(mat), `/`)
+mat[mat > max(limits)] <- max(limits)
+mat[mat < min(limits)] <- min(limits)
+
+p <- ArchRHeatmap(
+      mat = mat[idx, ],
+      scale = FALSE,
+      limits = c(min(mat), max(mat)),
+      clusterCols = FALSE, 
+      clusterRows = FALSE,
+      labelRows = T,
+      labelCols = FALSE,
+      color = paletteContinuous(set = "solarExtra", n = 100),
+      # customRowLabel = match(idxLabel, rownames(mat[idx,])),
+      # showColDendrogram = TRUE,
+      # name = metadata(seTrajectory)$Params$useMatrix,
+      draw = FALSE
+    )
+
+pdf(paste0(out.dir, 'pseudotime_gim_ec2.pdf'), width = 5, height = 7, pointsize = 1)
+p
+dev.off()
+
+```
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,471 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+knitr::opts_knit$set(root.dir = '/home/yuzhao1/gca/yuzhao1/work/gca_rna/')
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+# tcell2 removed a plasma-t doublet cluster, around 150 cells
+tcell <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/tcell2.rds')
+```
+
+```{r}
+df_annotation_res1 <- list(
+'0' = 'CD103+ CD8 Trm', # CD8A, CD8B ITGAE(CD103)
+'1' = 'CD103+ CD8 Trm', 
+'2' = 'CD103+ CD4 Trm', # IL17A, IL26(means it is derived from Th17), ITGAE(CD103)
+'3' = 'CD4 Tcm', # LEF1, TCF7, CCR7
+'4' = 'CD103- CD4 Trm', # 
+'5' = 'gdT', # TRDC, GNLY, GZMA, 
+'6' = 'CD103- CD4 Trm',
+'7' = 'KLRG1+ CD8 Trm', #  KLRG1, IFNG-AS1,IFNG, GZMK, HLA-DRB1, HLA-DRA, non-GNLY(less cytoxicity), IL-7R is downregulated on activated effector T cells (
+'8' = 'Treg', # FOXP3, IL2RA, IL7,lack of IL7R
+'9' = 'CD103- CD4 Trm',
+'10' = 'gdT', # ENTPD1, GZMK, NCR1, NON-IL7R
+'11' = 'CD103+ CD8 Trm', # same with 0,1 (no significant diff between 0 and 11)
+'12' = 'MAIT', # SLC4A10, NCR3, KLRG1, GZMK, KLRG1
+'13' = 'NK', # GZMK, NCR1, non-CD3D, NON-IL7RN, KLRF1 (NKp80, in NK but not ILC),
+'14' = 'ILCs', # IL7R, TCF7, PRKG1, PCDH9, AFF3, AREG,IL1R1, IL23R, KIT non-CD3D
+'15' = 'Treg',
+'16' = 'NK T' # KLRF1, IFNG, FGFBP2, GZMB, CX3CR1, KLRG1, NON-IL7R: No CD4, No CD8, has CD3 and NK markers
+)
+
+
+tcell$anno1 <- mapvalues(as.character(tcell$seurat_clusters_res1), from = names(df_annotation_res1),
+                         to = df_annotation_res1) %>% unlist()
+```
+
+
+```{r}
+# # decide whether to remove clusters
+# columns_to_remove <- grep("seurat_cluster", names(tcell@meta.data))
+# tcell@meta.data <- tcell@meta.data[,-columns_to_remove]
+# columns_to_remove <- grep("RNA_snn_", names(tcell@meta.data))
+# tcell@meta.data <- tcell@meta.data[,-columns_to_remove]
+```
+
+
+```{r}
+# # filter LQ cells from previous clustering results, and then remove precious labels, from tcell1 to tcell2
+# # LQ: remove tcell-epithelial doublets
+# xx <- Cells(tcell)[which(!tcell$seurat_clusters_res1.5 %in% c('17'))]
+# tcell_filtered <- subset(tcell, cells = xx)
+# columns_to_remove <- grep("seurat_cluster", names(tcell_filtered@meta.data))
+# tcell_filtered@meta.data <- tcell_filtered@meta.data[,-columns_to_remove]
+# columns_to_remove <- grep("RNA_snn_", names(tcell_filtered@meta.data))
+# tcell_filtered@meta.data <- tcell_filtered@meta.data[,-columns_to_remove]
+```
+
+
+```{r, eval=F}
+# # save tcell2 again after second round of processing
+# saveRDS(tcell, '~/yuzhao1/work/final_RC2rna/annotation/rds/tcell2.rds')
+# saveRDS(tcell_filtered, '~/yuzhao1/work/final_RC2rna/annotation/rds/tcell2.rds')
+```
+
+
+```{r, eval=F}
+tcell <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/tcell2.rds')
+```
+
+```{r}
+# ### update anno1_loc
+# seurat <- tcell
+# seurat$anno1_loc <- paste0(seurat$anno1, '-', seurat$biopsy_location)
+# seurat$anno1_loc[seurat$anno1 %in% c("CD103+ CD4 Trm", "CD103- CD4 Trm", "CD4 Tcm", "Treg") & seurat$biopsy_location =='POU'] <- 'CD4T-POU'
+# seurat$anno1_loc[seurat$anno1 %in% c("CD103+ CD4 Trm", "CD103- CD4 Trm", "CD4 Tcm", "Treg") & seurat$biopsy_location =='PP'] <- 'CD4T-PP'
+# seurat$anno1_loc[seurat$anno1 %in% c("CD103+ CD4 Trm", "CD103- CD4 Trm", "CD4 Tcm", "Treg") & seurat$biopsy_location =='TI'] <- 'CD4T-TI'
+# seurat$anno1_loc[seurat$anno1 %in% c("CD103+ CD4 Trm", "CD103- CD4 Trm", "CD4 Tcm", "Treg") & seurat$biopsy_location =='AC'] <- 'CD4T-AC'
+# 
+# seurat$anno1_loc[seurat$anno1 %in% c("CD103+ CD8 Trm", "KLRG1+ CD8 Trm") & seurat$biopsy_location =='POU'] <- 'CD8T-POU'
+# seurat$anno1_loc[seurat$anno1 %in% c("CD103+ CD8 Trm", "KLRG1+ CD8 Trm") & seurat$biopsy_location =='PP'] <- 'CD8T-PP'
+# seurat$anno1_loc[seurat$anno1 %in% c("CD103+ CD8 Trm", "KLRG1+ CD8 Trm") & seurat$biopsy_location =='TI'] <- 'CD8T-TI'
+# seurat$anno1_loc[seurat$anno1 %in% c("CD103+ CD8 Trm", "KLRG1+ CD8 Trm") & seurat$biopsy_location =='AC'] <- 'CD8T-AC'
+# 
+# # saveRDS(seurat, '~/yuzhao1/work/final_RC2rna/annotation/rds/tcell2.rds')
+```
+
+### workflow
+
+
+```{r, include = F, eval=F}
+# tcell3 has all been preprocessed, but kept using the embedding and clustering results of tcell2 (best accuray for cell-type markers)
+tcell <- NormalizeData(tcell)
+tcell <- FindVariableFeatures(tcell, selection.method = "vst", nfeatures = 2000)
+tcell <- ScaleData(tcell, vars.to.regress = c('percent.mt', 'nCount_RNA', 'CC.Difference'))
+tcell <- RunPCA(tcell, npcs = 50)
+tcell <- RunHarmony(tcell, group.by.vars = 'Patient_ID', max.iter.harmony = 20)
+tcell <- FindNeighbors(tcell, reduction = 'harmony', dims = 1:30)
+
+# this specific embedding captures the clustering results very well.
+tcell <- RunUMAP(tcell,  dims = 1:30, reduction = 'harmony', reduction.name = 'harmony_umap',
+                      min.dist = 0.5, n.neighbors = 50, seed.use = 5,
+                      reduction.key = 'UMAP_')
+
+tcell <- FindClusters(tcell, resolution = 0.2)
+tcell$seurat_clusters_res0.2 <- Idents(tcell)
+
+tcell <- FindClusters(tcell, resolution = 0.3)
+tcell$seurat_clusters_res0.3 <- Idents(tcell)
+
+tcell <- FindClusters(tcell, resolution = 0.5)
+tcell$seurat_clusters_res0.5 <- Idents(tcell)
+
+tcell <- FindClusters(tcell, resolution = 0.6)
+tcell$seurat_clusters_res0.6 <- Idents(tcell)
+
+tcell <- FindClusters(tcell, resolution = 0.7)
+tcell$seurat_clusters_res0.7 <- Idents(tcell)
+
+tcell <- FindClusters(tcell, resolution = 0.8)
+tcell$seurat_clusters_res0.8 <- Idents(tcell)
+
+tcell <- FindClusters(tcell, resolution = 1)
+tcell$seurat_clusters_res1 <- Idents(tcell)
+
+tcell <- FindClusters(tcell, resolution = 1.2)
+tcell$seurat_clusters_res1.2 <- Idents(tcell)
+
+tcell <- FindClusters(tcell, resolution = 1.5)
+tcell$seurat_clusters_res1.5 <- Idents(tcell)
+
+tcell <- FindClusters(tcell, resolution = 2)
+tcell$seurat_clusters_res2 <- Idents(tcell)
+
+tcell <- FindClusters(tcell, resolution = 2.5)
+tcell$seurat_clusters_res2.5 <- Idents(tcell)
+```
+
+```{r}
+ElbowPlot(tcell, ndims = 50)
+```
+
+
+```{r}
+xx <- list()
+```
+
+```{r}
+# do parallel computing
+clusters_to_test <- unique(tcell$seurat_clusters_res1)
+# clusters_to_test <- c('14')
+for(cluster in clusters_to_test ){
+  xx[[cluster]] <- FindMarkers(tcell, ident.1 = cluster, min.pct = 0.2, logfc.threshold = 0.5, group.by = 'seurat_clusters_res1')
+  saveRDS(xx[[cluster]], paste0('~/yuzhao1/work/final_RC2rna/annotation/markers/tcell2_res1/cluster_', cluster, '.rds'))
+}
+
+
+```
+
+```{r}
+cluster <- '2'
+View(readRDS(paste0('~/yuzhao1/work/final_RC2rna/annotation/markers/tcell2_res1/cluster_', cluster, '.rds')))
+```
+
+```{r}
+xx <- FindMarkers(tcell, ident.1 = c('2'), ident.2 = c('9','4','6'), min.pct = 0.1, logfc.threshold = 0.5, group.by = 'seurat_clusters_res1')
+```
+
+```{r}
+View(xx)
+```
+
+```{r, fig.width=7}
+feature <- 'CD8A'
+df <- data.frame(tcell@meta.data)
+df$embedding1 <- data.frame(tcell@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(tcell@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$feature_to_plot <- FetchData(tcell, feature) %>% unlist()
+plot_df_umap_custom(df, plot_feature = T)
+# +
+#   facet_wrap(~ biopsy_location) +
+#   theme(
+#     strip.background = element_rect(fill = "white", colour = "white"),
+#     strip.text = element_text(size = 12)
+#   )
+
+VlnPlot(tcell, feature, group.by = 'anno1', pt.size = 0)
+```
+
+
+### Check clustering results
+
+```{r}
+# tcell <- RunUMAP(tcell,  dims = 1:30, reduction = 'harmony', reduction.name = 'harmony_umap', 
+#                       min.dist = 0.5, n.neighbors = 50, seed.use = 34196,
+#                       repulsion.strength = 1.1,
+#                       reduction.key = 'UMAP_')
+
+# tcell <- RunUMAP(tcell,  dims = 1:30, reduction = 'harmony', reduction.name = 'harmony_umap',
+#                       min.dist = 0.1, n.neighbors = 10, reduction.key = 'UMAP_',
+#                       seed.use = 34196, n.epochs = 500,
+#                       set.op.mix.ratio = 0.5, local.connectivity = 2, repulsion.strength = 0.5, negative.sample.rate = 20,
+#                       spread = 0.5)
+
+tcell <- RunUMAP(tcell,  dims = 1:30, reduction = 'harmony', reduction.name = 'harmony_umap',
+                      min.dist = 0.3, n.neighbors = 30, seed.use = 5, 
+                      repulsion.strength = 1.0, n.epochs = 500, negative.sample.rate = 15, 
+                      reduction.key = 'UMAP_')
+
+```
+
+
+```{r, fig.height=7, fig.width=7}
+df <- data.frame(tcell@meta.data)
+df$embedding1 <- data.frame(tcell@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(tcell@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$cluster_name <- tcell$seurat_clusters_res1
+plot_df_umap_custom(df, show.label = 'name')
+```
+
+```{r, fig.height=7, fig.width=7}
+df <- data.frame(tcell@meta.data)
+df$embedding1 <- data.frame(tcell@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(tcell@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$cluster_name <- tcell$anno1
+p<-plot_df_umap_custom(df, show.label = 'name')
+p
+
+png('~/yuzhao1/work/final_RC2rna/annotation/plots/umap_tcell.png',res = 300, height = 2000, width = 1800)
+p
+dev.off()
+```
+
+```{r, fig.height=13, fig.width=12}
+df <- data.frame(tcell@meta.data)
+df$embedding1 <- data.frame(tcell@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(tcell@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$cluster_name <- tcell$anno1
+p<- plot_df_umap_custom(df, show.label = 'name') +
+  facet_wrap(~ biopsy_location) +
+  theme(
+    strip.background = element_rect(fill = "white", colour = "white"),
+    strip.text = element_text(size = 12)
+  )
+p
+png('~/yuzhao1/work/final_RC2rna/annotation/plots/umap_tcell_loc.png',res = 300, height = 3000, width = 3000)
+plot_df_umap_custom(df, show.label = 'na') +
+  facet_wrap(~ biopsy_location) +
+  theme(
+    strip.background = element_rect(fill = "white", colour = "white"),
+    strip.text = element_text(size = 12)
+  )
+dev.off()
+```
+
+```{r, fig.height=13, fig.width=12}
+tcell@meta.data$Sample_ID_Corrected <- factor(tcell@meta.data$Sample_ID_Corrected,
+                                                   levels = c("HA01-TI","HA02-TI","HA04-TI","HA50TI","HA51TI","HA55TI",
+                                                              "HA01-AC","HA02-AC","HA04-AC","HA50AC","HA51AC","HA55AC",
+                                                              "OR101-PP","OR102-PP","OR109-PP","OR43-PP","OR48-PP","OR72PP",
+                                                              "OR101-POU","OR102-POU","OR109-POU","OR43-POU","OR48-POU","OR72POU"
+                                                              ))
+df <- data.frame(tcell@meta.data)
+df$embedding1 <- data.frame(tcell@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(tcell@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$cluster_name <- tcell$anno1
+
+p<- plot_df_umap_custom(df, show.label = 'name') +
+  facet_wrap(~ Sample_ID_Corrected, ncol = 6) +
+  theme(
+    strip.background = element_rect(fill = "white", colour = "white"),
+    strip.text = element_text(size = 12)
+  )
+p
+png('~/yuzhao1/work/final_RC2rna/annotation/plots/umap_tcell_sample.png',res = 300, height = 5000, width = 8000)
+p
+dev.off()
+```
+
+
+#### Check specific markers
+
+```{r, fig.width=7}
+feature <- 'MKI67'
+df <- data.frame(tcell@meta.data)
+df$embedding1 <- data.frame(tcell@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(tcell@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$feature_to_plot <- FetchData(tcell, feature) %>% unlist()
+plot_df_umap_custom(df, plot_feature = T)
+
+VlnPlot(tcell, feature, group.by = 'seurat_clusters_res1', pt.size = 0)
+```
+
+```{r, fig.width=7}
+feature <- 'IGHA1'
+df <- data.frame(tcell@meta.data)
+df$embedding1 <- data.frame(tcell@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(tcell@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$feature_to_plot <- FetchData(tcell, feature) %>% unlist()
+plot_df_umap_custom(df, plot_feature = T)
+
+VlnPlot(tcell, feature, group.by = 'seurat_clusters_res1', pt.size = 0)
+```
+
+```{r, fig.width=7}
+feature <- 'CD3D'
+df <- data.frame(tcell@meta.data)
+df$embedding1 <- data.frame(tcell@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(tcell@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$feature_to_plot <- FetchData(tcell, feature) %>% unlist()
+plot_df_umap_custom(df, plot_feature = T)
+
+VlnPlot(tcell, feature, group.by = 'seurat_clusters_res1', pt.size = 0)
+```
+
+```{r, fig.width=7}
+feature <- 'EPCAM'
+df <- data.frame(tcell@meta.data)
+df$embedding1 <- data.frame(tcell@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(tcell@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$feature_to_plot <- FetchData(tcell, feature) %>% unlist()
+plot_df_umap_custom(df, plot_feature = T)
+
+VlnPlot(tcell, feature, group.by = 'seurat_clusters_res1', pt.size = 0)
+```
+
+```{r, fig.width=7}
+feature <- 'XBP1'
+df <- data.frame(tcell@meta.data)
+df$embedding1 <- data.frame(tcell@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(tcell@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$feature_to_plot <- FetchData(tcell, feature) %>% unlist()
+plot_df_umap_custom(df, plot_feature = T)
+
+VlnPlot(tcell, feature, group.by = 'seurat_clusters_res1', pt.size = 0)
+```
+
+```{r, fig.width=7}
+feature <- 'TRBC1'
+df <- data.frame(tcell@meta.data)
+df$embedding1 <- data.frame(tcell@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(tcell@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$feature_to_plot <- FetchData(tcell, feature) %>% unlist()
+plot_df_umap_custom(df, plot_feature = T)
+
+VlnPlot(tcell, feature, group.by = 'seurat_clusters_res1', pt.size = 0)
+```
+
+```{r, fig.width=7}
+feature <- 'ZBTB16'
+df <- data.frame(tcell@meta.data)
+df$embedding1 <- data.frame(tcell@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(tcell@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$feature_to_plot <- FetchData(tcell, feature) %>% unlist()
+plot_df_umap_custom(df, plot_feature = T)
+
+VlnPlot(tcell, feature, group.by = 'seurat_clusters_res1', pt.size = 0)
+```
+
+```{r, fig.width=7}
+feature <- 'IL2RA'
+df <- data.frame(tcell@meta.data)
+df$embedding1 <- data.frame(tcell@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(tcell@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$feature_to_plot <- FetchData(tcell, feature) %>% unlist()
+plot_df_umap_custom(df, plot_feature = T)
+
+VlnPlot(tcell, feature, group.by = 'seurat_clusters_res1', pt.size = 0)
+```
+
+```{r, fig.width=7}
+feature <- 'CD8A'
+df <- data.frame(tcell@meta.data)
+df$embedding1 <- data.frame(tcell@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(tcell@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$feature_to_plot <- FetchData(tcell, feature) %>% unlist()
+plot_df_umap_custom(df, plot_feature = T)
+
+VlnPlot(tcell, feature, group.by = 'seurat_clusters_res1', pt.size = 0)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+#### Established markers
+
+MAIT cell
+
+```{r, fig.width=7}
+feature <- 'SLC4A10'
+df <- data.frame(tcell@meta.data)
+df$embedding1 <- data.frame(tcell@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(tcell@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$feature_to_plot <- FetchData(tcell, feature) %>% unlist()
+plot_df_umap_custom(df, plot_feature = T)
+
+VlnPlot(tcell, feature, group.by = 'seurat_clusters_res1', pt.size = 0)
+```
+
+```{r, fig.width=7}
+feature <- 'NCR3'
+df <- data.frame(tcell@meta.data)
+df$embedding1 <- data.frame(tcell@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(tcell@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$feature_to_plot <- FetchData(tcell, feature) %>% unlist()
+plot_df_umap_custom(df, plot_feature = T)
+
+VlnPlot(tcell, feature, group.by = 'seurat_clusters_res1', pt.size = 0)
+```
+
+```{r, fig.width=7}
+feature <- 'KLRG1'
+df <- data.frame(tcell@meta.data)
+df$embedding1 <- data.frame(tcell@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(tcell@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$feature_to_plot <- FetchData(tcell, feature) %>% unlist()
+plot_df_umap_custom(df, plot_feature = T)
+
+VlnPlot(tcell, feature, group.by = 'seurat_clusters_res1', pt.size = 0)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

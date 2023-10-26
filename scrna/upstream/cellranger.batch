@@ -1,0 +1,20 @@
+#!/bin/bash
+
+#SBATCH --output=%x.out
+#SBATCH --error=%x.err
+#SBATCH --time=36:00:00
+#SBATCH --partition=caslake
+#SBATCH --account=pi-spott
+#SBATCH --tasks=6
+#SBATCH --mem=84Gb
+
+## human
+
+cellranger count --id=$1 \
+                 --transcriptome=/project/gca/yuzhao1/software/cellranger/refdata/refdata-gex-GRCh38-2020-A \
+                 --fastqs=$2 \
+                 --sample=$3 
+                                     
+                                     
+                                     
+                                     

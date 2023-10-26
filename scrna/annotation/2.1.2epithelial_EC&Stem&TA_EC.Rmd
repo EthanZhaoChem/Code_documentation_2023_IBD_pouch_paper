@@ -1,0 +1,298 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+knitr::opts_knit$set(root.dir = '/home/yuzhao1/gca/yuzhao1/work/gca_rna/')
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+
+```{r, eval=F}
+# save epithelial2 again after second round of processing
+epithelial <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/epithelial3.rds')
+cells_ECandStem <- Cells(epithelial)[which(epithelial$anno2 %in% c('EC1-1','EC1-2', 'EC2-1', 'EC2-2', 'Stem1', 'Stem2', "TA_EC"))]
+```
+
+```{r}
+ec.stem <- subset(epithelial, cells = cells_ECandStem)
+```
+
+```{r}
+saveRDS(ec.stem, '~/yuzhao1/work/final_RC2rna/annotation/rds/epithelial3_EC_ECTA_Stem.rds')
+saveRDS(seurat_subACTI, '~/yuzhao1/work/final_RC2rna/annotation/rds/epithelial3_EC_ECTA_Stem_subACTI.rds')
+saveRDS(seurat_subPPPOU, '~/yuzhao1/work/final_RC2rna/annotation/rds/epithelial3_EC_ECTA_Stem_subPPPOU.rds')
+saveRDS(seurat_subPOU, '~/yuzhao1/work/final_RC2rna/annotation/rds/epithelial3_EC_ECTA_Stem_subPOU.rds')
+```
+
+```{r}
+ec.stem <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/epithelial3_EC_ECTA_Stem.rds')
+seurat_subACTI <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/epithelial3_EC_ECTA_Stem_subACTI.rds')
+seurat_subPPPOU <- saveRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/epithelial3_EC_ECTA_Stem_subPPPOU.rds')
+```
+
+```{r}
+write.table(ec.stem@reductions$harmony_umap@cell.embeddings,
+            '~/yuzhao1/work/final_RC2rna/celloracle/all/original_umap.csv', 
+            col.names = T, row.names=T, sep = ',')
+
+```
+
+```{r}
+seurat@meta.data[c('anno2', 'biopsy_location')] %>% table()
+```
+
+
+### workflow
+
+
+```{r, include = F, eval=F}
+ec.stem <- NormalizeData(ec.stem)
+ec.stem <- FindVariableFeatures(ec.stem, selection.method = "vst", nfeatures = 2000)
+ec.stem <- ScaleData(ec.stem, vars.to.regress = c('percent.mt', 'nCount_RNA', 'CC.Difference'))
+ec.stem <- RunPCA(ec.stem, npcs = 50)
+ec.stem <- RunHarmony(ec.stem, group.by.vars = 'Patient_ID', max.iter.harmony = 20)
+
+
+columns_to_remove <- grep("seurat_cluster", names(ec.stem@meta.data))
+ec.stem@meta.data <- ec.stem@meta.data[,-columns_to_remove]
+columns_to_remove <- grep("RNA_snn_", names(ec.stem@meta.data))
+ec.stem@meta.data <- ec.stem@meta.data[,-columns_to_remove]
+
+ec.stem <- RunUMAP(ec.stem,  dims = 1:50, reduction = 'harmony', reduction.name = 'harmony_umap', 
+                      min.dist = 0.4, n.neighbors = 50, seed.use = 1,
+                      reduction.key = 'UMAP_')
+
+ec.stem <- FindNeighbors(ec.stem, reduction = 'harmony', dims = 1:50)
+
+ec.stem <- FindClusters(ec.stem, resolution = 0.5)
+ec.stem$seurat_clusters_res0.5 <- Idents(ec.stem)
+
+ec.stem <- FindClusters(ec.stem, resolution = 1)
+ec.stem$seurat_clusters_res1 <- Idents(ec.stem)
+```
+
+```{r, include = F, eval=F}
+cells.subset <- Cells(ec.stem)[ec.stem$biopsy_location %in% c('AC', 'TI')]
+seurat_subACTI <- subset(ec.stem, cells = cells.subset)
+seurat_subACTI <- NormalizeData(seurat_subACTI)
+seurat_subACTI <- FindVariableFeatures(seurat_subACTI, selection.method = "vst", nfeatures = 2000)
+seurat_subACTI <- ScaleData(seurat_subACTI, vars.to.regress = c('percent.mt', 'nCount_RNA', 'CC.Difference'))
+seurat_subACTI <- RunPCA(seurat_subACTI, npcs = 50)
+seurat_subACTI <- RunHarmony(seurat_subACTI, group.by.vars = 'Patient_ID', max.iter.harmony = 20)
+
+
+columns_to_remove <- grep("seurat_cluster", names(seurat_subACTI@meta.data))
+seurat_subACTI@meta.data <- seurat_subACTI@meta.data[,-columns_to_remove]
+columns_to_remove <- grep("RNA_snn_", names(seurat_subACTI@meta.data))
+seurat_subACTI@meta.data <- seurat_subACTI@meta.data[,-columns_to_remove]
+
+seurat_subACTI <- RunUMAP(seurat_subACTI,  dims = 1:50, reduction = 'harmony', reduction.name = 'harmony_umap', 
+                      min.dist = 0.4, n.neighbors = 50, seed.use = 1,
+                      reduction.key = 'UMAP_')
+
+seurat_subACTI <- FindNeighbors(seurat_subACTI, reduction = 'harmony', dims = 1:50)
+
+seurat_subACTI <- FindClusters(seurat_subACTI, resolution = 0.5)
+seurat_subACTI$seurat_clusters_res0.5 <- Idents(seurat_subACTI)
+
+seurat_subACTI <- FindClusters(seurat_subACTI, resolution = 1)
+seurat_subACTI$seurat_clusters_res1 <- Idents(seurat_subACTI)
+```
+
+```{r, include = F, eval=F}
+cells.subset <- Cells(ec.stem)[ec.stem$biopsy_location %in% c('PP', 'POU')]
+seurat_subPPPOU <- subset(ec.stem, cells = cells.subset)
+seurat_subPPPOU <- NormalizeData(seurat_subPPPOU)
+seurat_subPPPOU <- FindVariableFeatures(seurat_subPPPOU, selection.method = "vst", nfeatures = 2000)
+seurat_subPPPOU <- ScaleData(seurat_subPPPOU, vars.to.regress = c('percent.mt', 'nCount_RNA', 'CC.Difference'))
+seurat_subPPPOU <- RunPCA(seurat_subPPPOU, npcs = 50)
+seurat_subPPPOU <- RunHarmony(seurat_subPPPOU, group.by.vars = 'Patient_ID', max.iter.harmony = 20)
+
+
+columns_to_remove <- grep("seurat_cluster", names(seurat_subPPPOU@meta.data))
+seurat_subPPPOU@meta.data <- seurat_subPPPOU@meta.data[,-columns_to_remove]
+columns_to_remove <- grep("RNA_snn_", names(seurat_subPPPOU@meta.data))
+seurat_subPPPOU@meta.data <- seurat_subPPPOU@meta.data[,-columns_to_remove]
+
+seurat_subPPPOU <- RunUMAP(seurat_subPPPOU,  dims = 1:50, reduction = 'harmony', reduction.name = 'harmony_umap', 
+                      min.dist = 0.4, n.neighbors = 50, seed.use = 1,
+                      reduction.key = 'UMAP_')
+
+seurat_subPPPOU <- FindNeighbors(seurat_subPPPOU, reduction = 'harmony', dims = 1:50)
+
+seurat_subPPPOU <- FindClusters(seurat_subPPPOU, resolution = 0.5)
+seurat_subPPPOU$seurat_clusters_res0.5 <- Idents(seurat_subPPPOU)
+
+seurat_subPPPOU <- FindClusters(seurat_subPPPOU, resolution = 1)
+seurat_subPPPOU$seurat_clusters_res1 <- Idents(seurat_subPPPOU)
+```
+
+```{r, include = F, eval=F}
+cells.subset <- Cells(ec.stem)[ec.stem$biopsy_location %in% c('POU')]
+seurat_subPOU <- subset(ec.stem, cells = cells.subset)
+seurat_subPOU <- NormalizeData(seurat_subPOU)
+seurat_subPOU <- FindVariableFeatures(seurat_subPOU, selection.method = "vst", nfeatures = 2000)
+seurat_subPOU <- ScaleData(seurat_subPOU, vars.to.regress = c('percent.mt', 'nCount_RNA', 'CC.Difference'))
+seurat_subPOU <- RunPCA(seurat_subPOU, npcs = 50)
+seurat_subPOU <- RunHarmony(seurat_subPOU, group.by.vars = 'Patient_ID', max.iter.harmony = 20)
+
+
+columns_to_remove <- grep("seurat_cluster", names(seurat_subPOU@meta.data))
+seurat_subPOU@meta.data <- seurat_subPOU@meta.data[,-columns_to_remove]
+columns_to_remove <- grep("RNA_snn_", names(seurat_subPOU@meta.data))
+seurat_subPOU@meta.data <- seurat_subPOU@meta.data[,-columns_to_remove]
+
+seurat_subPOU <- RunUMAP(seurat_subPOU,  dims = 1:50, reduction = 'harmony', reduction.name = 'harmony_umap', 
+                      min.dist = 0.4, n.neighbors = 50, seed.use = 1,
+                      reduction.key = 'UMAP_')
+
+seurat_subPOU <- FindNeighbors(seurat_subPOU, reduction = 'harmony', dims = 1:50)
+
+seurat_subPOU <- FindClusters(seurat_subPOU, resolution = 0.5)
+seurat_subPOU$seurat_clusters_res0.5 <- Idents(seurat_subPOU)
+
+seurat_subPOU <- FindClusters(seurat_subPOU, resolution = 1)
+seurat_subPOU$seurat_clusters_res1 <- Idents(seurat_subPOU)
+```
+
+### Check clustering results
+
+```{r}
+seurat <- ec.stem
+```
+
+
+```{r, fig.height=12, fig.width=11}
+df <- data.frame(seurat@meta.data)
+df$embedding1 <- data.frame(seurat@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(seurat@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$cluster_name <- seurat$anno2
+plot_df_umap_custom(df, show.label = 'name') +
+  facet_wrap(~ biopsy_location) +
+  theme(
+    strip.background = element_rect(fill = "white", colour = "white"),
+    strip.text = element_text(size = 12)
+  )
+```
+
+#### check AC TI subset
+
+```{r}
+seurat <- seurat_subACTI
+```
+
+```{r}
+df <- data.frame(seurat@meta.data)
+df$embedding1 <- data.frame(seurat@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(seurat@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$cluster_name <- seurat$anno2
+plot_df_umap_custom(df, show.label = 'name')
+```
+
+```{r, fig.height=7, fig.width=10}
+df <- data.frame(seurat@meta.data)
+df$embedding1 <- data.frame(seurat@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(seurat@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$cluster_name <- seurat$anno2
+plot_df_umap_custom(df, show.label = 'name') +
+  facet_wrap(~ biopsy_location) +
+  theme(
+    strip.background = element_rect(fill = "white", colour = "white"),
+    strip.text = element_text(size = 12)
+  )
+```
+
+#### check POU PP subset
+
+```{r}
+seurat <- seurat_subPPPOU
+```
+
+```{r}
+df <- data.frame(seurat@meta.data)
+df$embedding1 <- data.frame(seurat@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(seurat@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$cluster_name <- seurat$seurat_clusters_res0.5
+plot_df_umap_custom(df, show.label = 'name')
+```
+
+```{r}
+df <- data.frame(seurat@meta.data)
+df$embedding1 <- data.frame(seurat@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(seurat@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$cluster_name <- seurat$anno2
+plot_df_umap_custom(df, show.label = 'name')
+```
+
+```{r, fig.height=7, fig.width=10}
+df <- data.frame(seurat@meta.data)
+df$embedding1 <- data.frame(seurat@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(seurat@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$cluster_name <- seurat$anno2
+plot_df_umap_custom(df, show.label = 'name') +
+  facet_wrap(~ biopsy_location) +
+  theme(
+    strip.background = element_rect(fill = "white", colour = "white"),
+    strip.text = element_text(size = 12)
+  )
+```
+
+
+
+
+#### check POU subset
+
+```{r}
+seurat <- seurat_subPOU
+```
+
+```{r}
+df <- data.frame(seurat@meta.data)
+df$embedding1 <- data.frame(seurat@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(seurat@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$cluster_name <- seurat$seurat_clusters_res0.5
+plot_df_umap_custom(df, show.label = 'name')
+```
+
+```{r}
+df <- data.frame(seurat@meta.data)
+df$embedding1 <- data.frame(seurat@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(seurat@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$cluster_name <- seurat$anno2
+plot_df_umap_custom(df, show.label = 'name')
+```
+
+```{r, fig.height=7, fig.width=10}
+df <- data.frame(seurat@meta.data)
+df$embedding1 <- data.frame(seurat@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(seurat@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$cluster_name <- seurat$anno2
+plot_df_umap_custom(df, show.label = 'name') +
+  facet_wrap(~ biopsy_location) +
+  theme(
+    strip.background = element_rect(fill = "white", colour = "white"),
+    strip.text = element_text(size = 12)
+  )
+```
+
+
+
+
+
+
+
+
+
+
+

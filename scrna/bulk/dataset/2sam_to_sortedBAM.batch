@@ -1,0 +1,15 @@
+#!/bin/bash
+
+#SBATCH --output=%x.out
+#SBATCH --error=%x.err
+#SBATCH --time=36:00:00
+#SBATCH --partition=caslake
+#SBATCH --account=pi-spott
+#SBATCH --tasks=1
+#SBATCH --mem=180Gb
+
+       
+samtools view -bS $1 > $2
+samtools sort $2 -o $3
+
+                                     

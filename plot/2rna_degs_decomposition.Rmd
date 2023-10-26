@@ -1,0 +1,164 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(ArchR)
+library(parallel)
+library(BSgenome.Hsapiens.UCSC.hg38)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+source('~/yuzhao1/scripts/helper_archr.R')
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('~/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+source('~/yuzhao1/work/manu/rc2/scripts/rna_deg_markers.R')
+```
+
+```{r}
+out.dir <- '~/yuzhao1/work/manu/rc2/plots/2rna_degs_decomposition/'
+```
+
+
+```{r}
+markers <- readRDS('~/yuzhao1/work/final_RC2rna/deg/epithelial/ec/markers_filtered_logFC1_p0.05.rds')
+pathways <- readRDS('~/yuzhao1/work/final_RC2rna/deg/epithelial/ec/pathways.rds')
+markers.vectors <- list()
+names(markers)
+```
+
+
+```{r}
+temp <- markers[["TIvsAC"]]
+markers.vectors[['TIvsAC']] <- rownames(temp)[temp[['logFC']] > 1]
+markers.vectors[['ACvsTI']] <- rownames(temp)[temp[['logFC']] < -1]
+
+temp <- markers[["PPvsPOU_EC2"]]
+markers.vectors[['PPvsPOU_EC2']] <- rownames(temp)[temp[['logFC']] > 1]
+markers.vectors[['POU_EC2vsPP']] <- rownames(temp)[temp[['logFC']] < -1]
+
+temp <- markers[["POU_EC2vsPOU_EC1"]]
+markers.vectors[['POU_EC2vsPOU_EC1']] <- rownames(temp)[temp[['logFC']] > 1]
+markers.vectors[['POU_EC1vsPOU_EC2']] <- rownames(temp)[temp[['logFC']] < -1]
+
+temp <- markers[["POU_EC2vsAC"]]
+markers.vectors[["POU_EC2vsAC"]] <- rownames(temp)[temp[['logFC']] > 1]
+markers.vectors[["ACvsPOU_EC2"]] <- rownames(temp)[temp[['logFC']] < -1]
+
+temp <- markers[["PPvsPOU_EC1"]]
+markers.vectors[["PPvsPOU_EC1"]] <- rownames(temp)[temp[['logFC']] > 1]
+markers.vectors[["POU_EC1vsPP"]] <- rownames(temp)[temp[['logFC']] < -1]
+
+```
+
+
+```{r}
+set_order <- c(
+  'ACvsTI',
+  'POU_EC2vsPP',
+  'POU_EC2vsPOU_EC1',
+  "POU_EC1vsPP",
+  "ACvsPOU_EC2",
+  'TIvsAC',
+  'PPvsPOU_EC2',
+  'POU_EC1vsPOU_EC2',
+  "PPvsPOU_EC1",
+  "POU_EC2vsAC"
+)
+```
+
+```{r}
+m1 = make_comb_mat(markers.vectors[set_order], mode = "intersect")
+
+# m2 <- m1[comb_degree(m1)%in%c(2,3) & comb_size(m1) >= 100]
+m2 <- m1[comb_degree(m1)%in%c(2,3)]
+
+m2 <- m2[c(1, 50, 51, 52, 53, 40,  77, 78, 79, 80)]
+ss <- set_size(m2)
+cs <- comb_size(m2)
+```
+
+
+```{r, fig.width=8, fig.height=5}
+pdf(paste0(out.dir, 'EC_all_updated', '.pdf'), width = 8, height = 5, pointsize = 1)
+
+# set colors for top bars
+combo_colors <- c("#80b1d3",  "#80b1d3","#80b1d3", "#80b1d3", "#80b1d3", 
+                  "#8dd3c7","#8dd3c7", "#8dd3c7", "#8dd3c7", "#8dd3c7")
+row_colors <- c("#80b1d3", "#80b1d3", "#80b1d3","#80b1d3","#80b1d3",
+                "#8dd3c7", "#8dd3c7", "#8dd3c7","#8dd3c7","#8dd3c7")
+rownames_gp <- gpar(fontsize = 10, fontface = "bold", col = "blue")
+
+ht <- UpSet(
+  m2,
+  set_order = set_order,
+  comb_col = combo_colors,
+  top_annotation = HeatmapAnnotation(
+    "# Open regions" = anno_barplot(
+      cs,
+      axis = T,
+      axis_param = list(gp = gpar(fontsize =
+                                    10)),
+      ylim = c(0, max(cs) * 1.1),
+      border = FALSE,
+      gp = gpar(fill = combo_colors),
+      height = unit(4, "cm")
+    ),
+    annotation_name_side = "left",
+    annotation_name_rot = 90,
+    annotation_name_gp = gpar(fontsize = 12)
+  ),
+  
+  right_annotation =  rowAnnotation(
+    "DEGs per contrast" = anno_barplot(
+      ss,
+      baseline = 0,
+      axis = T,
+      axis_param = list(
+        gp = gpar(fontsize = 10),
+        at = c(0, 500, 1000, 1500, 2000),
+        labels = c(0, 500, 1000, 1500, 2000),
+        labels_rot = 45
+      ),
+      border = FALSE,
+      extend = 0.5,
+      gp = gpar(fill = row_colors),
+      width = unit(6, "cm")
+    ),
+  annotation_name_gp = gpar(fontsize = 12)
+))
+
+ht = draw(ht)
+od = column_order(ht)
+rod = row_order(ht)
+decorate_annotation(
+  "# Open regions", {
+    grid.text(cs[od], x = seq_along(cs), y = unit(cs[od], "native") + unit(2, "pt"),
+              default.units = "native", just = c("center", "bottom"),
+              gp = gpar(fontsize = 10, col = "black", lwd=3), rot = 0)})
+
+decorate_annotation(
+  "DEGs per contrast", {
+    grid.text(ss[rod], y = seq_along(ss) %>% rev(), x = unit(ss[rod], "native") + unit(1, "cm"),
+              default.units = "native", just = c("right", "center"),
+              gp = gpar(fontsize = 10, col = "black", lwd=3), rot = 0)})
+
+dev.off()
+```
+
+
+
+
+
+
+

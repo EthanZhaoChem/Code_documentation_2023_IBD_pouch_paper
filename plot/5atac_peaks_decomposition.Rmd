@@ -1,0 +1,1069 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(ArchR)
+library(parallel)
+library(BSgenome.Hsapiens.UCSC.hg38)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+source('~/yuzhao1/scripts/helper_archr.R')
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('~/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+source('~/yuzhao1/work/manu/rc2/scripts/rna_deg_markers.R')
+```
+
+```{r}
+proj_union <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_filtered/")
+proj_epithelial <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_epithelial_filtered2/")
+proj_immune <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_immune_filtered/")
+proj_tcell <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_tcell_filtered2/")
+proj_bcell <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_bcell_filtered/")
+proj_myeloid <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_myeloid_filtered2/")
+proj_others <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_others_filtered2/")
+
+```
+
+```{r}
+out.dir <- '~/yuzhao1/work/manu/rc2/plots/5atac_peaks_decomposition/'
+```
+
+### prepare file
+
+```{r}
+DARs <- readRDS('~/yuzhao1/work/final_RC2atac/peaks/3DARs/DARs_EC.rds')
+temp_lineage <- 'epithelial'
+cutoff_FDR <- 0.01 # cutoff is for peak selection, cutoffs for motifs are specificied in the text
+cutoff_Log2FC <- 1
+proj <- paste0('proj_', temp_lineage) %>% as.name(.) %>% eval(.)
+DARs_plot <- list()
+```
+
+```{r}
+contrast_name <- 'EC_ACvsTI'
+contrast_name.2 <- 'EC_TIvsAC'
+
+df_stat <- archr_helper_markerPeaks_converter(DARs[[contrast_name]])
+archr_peakset_Loc <- paste0(paste0(as.character(seqnames(proj@peakSet)), ':',
+                                   start(proj@peakSet),'-',end(proj@peakSet)))
+idx_matched <- match(rownames(df_stat), archr_peakset_Loc)
+peaks_info <- as.data.frame(proj@peakSet[idx_matched], row.names = NULL)
+df_stat <- bind_cols(df_stat, peaks_info)
+
+# export DARs in this contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC > cutoff_Log2FC), ]
+DARs_plot[[contrast_name]] <- rownames(df_stat_significant)
+
+# export DARs in the opposite contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC < 0-cutoff_Log2FC), ]
+DARs_plot[[contrast_name.2]] <- rownames(df_stat_significant)
+```
+
+```{r}
+contrast_name <- 'EC_POU2vsPP'
+contrast_name.2 <- 'EC_PPvsPOU2'
+
+df_stat <- archr_helper_markerPeaks_converter(DARs[[contrast_name]])
+archr_peakset_Loc <- paste0(paste0(as.character(seqnames(proj@peakSet)), ':',
+                                   start(proj@peakSet),'-',end(proj@peakSet)))
+idx_matched <- match(rownames(df_stat), archr_peakset_Loc)
+peaks_info <- as.data.frame(proj@peakSet[idx_matched], row.names = NULL)
+df_stat <- bind_cols(df_stat, peaks_info)
+
+# export DARs in this contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC > cutoff_Log2FC), ]
+DARs_plot[[contrast_name]] <- rownames(df_stat_significant)
+
+# export DARs in the opposite contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC < 0-cutoff_Log2FC), ]
+DARs_plot[[contrast_name.2]] <- rownames(df_stat_significant)
+```
+
+```{r}
+contrast_name <- 'EC_POU1vsPP'
+contrast_name.2 <- 'EC_PPvsPOU1'
+
+df_stat <- archr_helper_markerPeaks_converter(DARs[[contrast_name]])
+archr_peakset_Loc <- paste0(paste0(as.character(seqnames(proj@peakSet)), ':',
+                                   start(proj@peakSet),'-',end(proj@peakSet)))
+idx_matched <- match(rownames(df_stat), archr_peakset_Loc)
+peaks_info <- as.data.frame(proj@peakSet[idx_matched], row.names = NULL)
+df_stat <- bind_cols(df_stat, peaks_info)
+
+# export DARs in this contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC > cutoff_Log2FC), ]
+DARs_plot[[contrast_name]] <- rownames(df_stat_significant)
+
+# export DARs in the opposite contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC < 0-cutoff_Log2FC), ]
+DARs_plot[[contrast_name.2]] <- rownames(df_stat_significant)
+```
+
+```{r}
+contrast_name <- 'EC_POUvsPP'
+contrast_name.2 <- 'EC_PPvsPOU'
+  
+df_stat <- archr_helper_markerPeaks_converter(DARs[[contrast_name]])
+archr_peakset_Loc <- paste0(paste0(as.character(seqnames(proj@peakSet)), ':',
+                                   start(proj@peakSet),'-',end(proj@peakSet)))
+idx_matched <- match(rownames(df_stat), archr_peakset_Loc)
+peaks_info <- as.data.frame(proj@peakSet[idx_matched], row.names = NULL)
+df_stat <- bind_cols(df_stat, peaks_info)
+
+# export DARs in this contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC > cutoff_Log2FC), ]
+DARs_plot[[contrast_name]] <- rownames(df_stat_significant)
+
+# export DARs in the opposite contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC < 0-cutoff_Log2FC), ]
+DARs_plot[[contrast_name.2]] <- rownames(df_stat_significant)
+```
+
+```{r}
+contrast_name <- 'EC_POU2vsPOU1'
+contrast_name.2 <- 'EC_POU1vsPOU2'
+
+df_stat <- archr_helper_markerPeaks_converter(DARs[[contrast_name]])
+archr_peakset_Loc <- paste0(paste0(as.character(seqnames(proj@peakSet)), ':',
+                                   start(proj@peakSet),'-',end(proj@peakSet)))
+idx_matched <- match(rownames(df_stat), archr_peakset_Loc)
+peaks_info <- as.data.frame(proj@peakSet[idx_matched], row.names = NULL)
+df_stat <- bind_cols(df_stat, peaks_info)
+
+# export DARs in this contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC > cutoff_Log2FC), ]
+DARs_plot[[contrast_name]] <- rownames(df_stat_significant)
+
+# export DARs in the opposite contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC < 0-cutoff_Log2FC), ]
+DARs_plot[[contrast_name.2]] <- rownames(df_stat_significant)
+```
+
+
+```{r}
+contrast_name <- 'EC_POU2vsAC'
+contrast_name.2 <- 'EC_ACvsPOU2'
+
+df_stat <- archr_helper_markerPeaks_converter(DARs[[contrast_name]])
+archr_peakset_Loc <- paste0(paste0(as.character(seqnames(proj@peakSet)), ':',
+                                   start(proj@peakSet),'-',end(proj@peakSet)))
+idx_matched <- match(rownames(df_stat), archr_peakset_Loc)
+peaks_info <- as.data.frame(proj@peakSet[idx_matched], row.names = NULL)
+df_stat <- bind_cols(df_stat, peaks_info)
+
+# export DARs in this contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC > cutoff_Log2FC), ]
+DARs_plot[[contrast_name]] <- rownames(df_stat_significant)
+
+# export DARs in the opposite contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC < 0-cutoff_Log2FC), ]
+DARs_plot[[contrast_name.2]] <- rownames(df_stat_significant)
+```
+
+```{r}
+contrast_name <- 'EC_POU1vsAC'
+contrast_name.2 <- 'EC_ACvsPOU1'
+
+df_stat <- archr_helper_markerPeaks_converter(DARs[[contrast_name]])
+archr_peakset_Loc <- paste0(paste0(as.character(seqnames(proj@peakSet)), ':',
+                                   start(proj@peakSet),'-',end(proj@peakSet)))
+idx_matched <- match(rownames(df_stat), archr_peakset_Loc)
+peaks_info <- as.data.frame(proj@peakSet[idx_matched], row.names = NULL)
+df_stat <- bind_cols(df_stat, peaks_info)
+
+# export DARs in this contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC > cutoff_Log2FC), ]
+DARs_plot[[contrast_name]] <- rownames(df_stat_significant)
+
+# export DARs in the opposite contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC < 0-cutoff_Log2FC), ]
+DARs_plot[[contrast_name.2]] <- rownames(df_stat_significant)
+```
+
+```{r}
+contrast_name <- 'EC_POUvsAC'
+contrast_name.2 <- 'EC_ACvsPOU'
+  
+df_stat <- archr_helper_markerPeaks_converter(DARs[[contrast_name]])
+archr_peakset_Loc <- paste0(paste0(as.character(seqnames(proj@peakSet)), ':',
+                                   start(proj@peakSet),'-',end(proj@peakSet)))
+idx_matched <- match(rownames(df_stat), archr_peakset_Loc)
+peaks_info <- as.data.frame(proj@peakSet[idx_matched], row.names = NULL)
+df_stat <- bind_cols(df_stat, peaks_info)
+
+# export DARs in this contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC > cutoff_Log2FC), ]
+DARs_plot[[contrast_name]] <- rownames(df_stat_significant)
+
+# export DARs in the opposite contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC < 0-cutoff_Log2FC), ]
+DARs_plot[[contrast_name.2]] <- rownames(df_stat_significant)
+```
+
+```{r}
+contrast_name <- 'EC_TIvsPP'
+contrast_name.2 <- 'EC_PPvsTI'
+  
+df_stat <- archr_helper_markerPeaks_converter(DARs[[contrast_name]])
+archr_peakset_Loc <- paste0(paste0(as.character(seqnames(proj@peakSet)), ':',
+                                   start(proj@peakSet),'-',end(proj@peakSet)))
+idx_matched <- match(rownames(df_stat), archr_peakset_Loc)
+peaks_info <- as.data.frame(proj@peakSet[idx_matched], row.names = NULL)
+df_stat <- bind_cols(df_stat, peaks_info)
+
+# export DARs in this contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC > cutoff_Log2FC), ]
+DARs_plot[[contrast_name]] <- rownames(df_stat_significant)
+
+# export DARs in the opposite contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC < 0-cutoff_Log2FC), ]
+DARs_plot[[contrast_name.2]] <- rownames(df_stat_significant)
+```
+
+```{r}
+saveRDS(DARs_plot, '~/yuzhao1/work/final_RC2atac/peaks/EC_DAR_regions_DifferentContrastLists_ScriptInManuFolder.rds')
+```
+
+```{r, fig.width=10}
+library(ComplexHeatmap)
+```
+
+### plot
+```{r}
+DARs_plot <- readRDS('~/yuzhao1/work/final_RC2atac/peaks/EC_DAR_regions_DifferentContrastLists_ScriptInManuFolder.rds')
+```
+
+```{r}
+test_peaks <- DARs_plot$EC_POU2vsPOU1
+test_peaks %<>% gsub(':','_',.) %>% gsub('-','_',.)
+all_peaks_ranges <- ranges(proj@peakSet)
+all_peaks <- paste0(seqnames(proj@peakSet), '_', start(all_peaks_ranges), '_', end(all_peaks_ranges))
+idx <- match(test_peaks, all_peaks)
+
+peak_origins <- proj@peakSet[idx,]
+celltype_origins <- strsplit(peak_origins$GroupReplicate, '._.', 1) %>% sapply(.,`[[`,1)
+sort(table(celltype_origins), decreasing = T)
+```
+
+```{r}
+test_peaks <- DARs_plot$EC_POU1vsPOU2
+test_peaks %<>% gsub(':','_',.) %>% gsub('-','_',.)
+all_peaks_ranges <- ranges(proj@peakSet)
+all_peaks <- paste0(seqnames(proj@peakSet), '_', start(all_peaks_ranges), '_', end(all_peaks_ranges))
+idx <- match(test_peaks, all_peaks)
+
+peak_origins <- proj@peakSet[idx,]
+celltype_origins <- strsplit(peak_origins$GroupReplicate, '._.', 1) %>% sapply(.,`[[`,1)
+sort(table(celltype_origins), decreasing = T)
+```
+
+
+
+
+
+```{r}
+# comprehensive
+set_order <- c(
+  'EC_ACvsTI',
+  'EC_POU2vsPP',
+  'EC_POU2vsPOU1',
+  'EC_POU1vsPP',
+  "EC_ACvsPOU2",
+  'EC_TIvsAC',
+  'EC_PPvsPOU2',
+  'EC_POU1vsPOU2',
+  'EC_PPvsPOU1',
+  "EC_POU2vsAC"
+)
+m1 = make_comb_mat(DARs_plot[set_order], mode = "intersect")
+
+m2 <- m1[comb_degree(m1)%in%c(2,3)]
+
+m2 <- m2[c(1, 58, 59, 60, 61, 48, 86, 87, 88, 89)]
+ss <- set_size(m2)
+cs <- comb_size(m2)
+```
+
+```{r, fig.width=8, fig.height=5}
+pdf(paste0(out.dir, 'EC_all', '.pdf'), width = 8, height = 5, pointsize = 1)
+
+# set colors for top bars
+combo_colors <- c("#80b1d3",  "#80b1d3","#80b1d3", "#80b1d3", "#80b1d3", 
+                  "#8dd3c7","#8dd3c7", "#8dd3c7", "#8dd3c7", "#8dd3c7")
+row_colors <- c("#80b1d3", "#80b1d3", "#80b1d3","#80b1d3","#80b1d3",
+                "#8dd3c7", "#8dd3c7", "#8dd3c7","#8dd3c7","#8dd3c7")
+
+rownames_gp <- gpar(fontsize = 10, fontface = "bold", col = "blue")
+
+ht <- UpSet(
+  m2,
+  set_order = set_order,
+  comb_col = combo_colors,
+  top_annotation = HeatmapAnnotation(
+    "# Open regions" = anno_barplot(
+      cs,
+      axis = T,
+      axis_param = list(gp = gpar(fontsize =
+                                    10)),
+      ylim = c(0, max(cs) * 1.1),
+      border = FALSE,
+      gp = gpar(fill = combo_colors),
+      height = unit(4, "cm")
+    ),
+    annotation_name_side = "left",
+    annotation_name_rot = 90,
+    annotation_name_gp = gpar(fontsize = 12)
+  ),
+  
+  right_annotation =  rowAnnotation(
+    "DARs per contrast" = anno_barplot(
+      ss,
+      baseline = 0,
+      axis = T,
+      axis_param = list(
+        gp = gpar(fontsize = 10),
+        at = c(0, 10000, 20000, 30000, 40000, 50000, 60000),
+        labels = c(0, 10000, 20000, 30000, 40000, 50000, 60000),
+        labels_rot = 45
+      ),
+      border = FALSE,
+      extend = 0.5,
+      gp = gpar(fill = row_colors),
+      width = unit(6, "cm")
+    ),
+  annotation_name_gp = gpar(fontsize = 12)
+))
+
+ht = draw(ht)
+od = column_order(ht)
+rod = row_order(ht)
+decorate_annotation(
+  "# Open regions", {
+    grid.text(cs[od], x = seq_along(cs), y = unit(cs[od], "native") + unit(2, "pt"),
+              default.units = "native", just = c("center", "bottom"),
+              gp = gpar(fontsize = 10, col = "black", lwd=3), rot = 0)})
+
+decorate_annotation(
+  "DARs per contrast", {
+    grid.text(ss[rod], y = seq_along(ss) %>% rev(), x = unit(ss[rod], "native") + unit(1, "cm"),
+              default.units = "native", just = c("right", "center"),
+              gp = gpar(fontsize = 10, col = "black", lwd=3), rot = 0)})
+
+dev.off()
+```
+
+### Stem
+
+```{r}
+DARs <- readRDS('~/yuzhao1/work/final_RC2atac/peaks/3DARs/DARs_Stem.rds')
+temp_lineage <- 'epithelial'
+cutoff_FDR <- 0.01 # cutoff is for peak selection, cutoffs for motifs are specificied in the text
+cutoff_Log2FC <- 1
+proj <- paste0('proj_', temp_lineage) %>% as.name(.) %>% eval(.)
+DARs_plot <- list()
+```
+
+```{r}
+contrast_name <- 'Stem_ACvsTI'
+contrast_name.2 <- 'Stem_TIvsAC'
+
+df_stat <- archr_helper_markerPeaks_converter(DARs[[contrast_name]])
+archr_peakset_Loc <- paste0(paste0(as.character(seqnames(proj@peakSet)), ':',
+                                   start(proj@peakSet),'-',end(proj@peakSet)))
+idx_matched <- match(rownames(df_stat), archr_peakset_Loc)
+peaks_info <- as.data.frame(proj@peakSet[idx_matched], row.names = NULL)
+df_stat <- bind_cols(df_stat, peaks_info)
+
+# export DARs in this contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC > cutoff_Log2FC), ]
+DARs_plot[[contrast_name]] <- rownames(df_stat_significant)
+
+# export DARs in the opposite contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC < 0-cutoff_Log2FC), ]
+DARs_plot[[contrast_name.2]] <- rownames(df_stat_significant)
+```
+
+```{r}
+contrast_name <- 'Stem_POU2vsPP'
+contrast_name.2 <- 'Stem_PPvsPOU2'
+
+df_stat <- archr_helper_markerPeaks_converter(DARs[[contrast_name]])
+archr_peakset_Loc <- paste0(paste0(as.character(seqnames(proj@peakSet)), ':',
+                                   start(proj@peakSet),'-',end(proj@peakSet)))
+idx_matched <- match(rownames(df_stat), archr_peakset_Loc)
+peaks_info <- as.data.frame(proj@peakSet[idx_matched], row.names = NULL)
+df_stat <- bind_cols(df_stat, peaks_info)
+
+# export DARs in this contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC > cutoff_Log2FC), ]
+DARs_plot[[contrast_name]] <- rownames(df_stat_significant)
+
+# export DARs in the opposite contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC < 0-cutoff_Log2FC), ]
+DARs_plot[[contrast_name.2]] <- rownames(df_stat_significant)
+```
+
+```{r}
+contrast_name <- 'Stem_POU1vsPP'
+contrast_name.2 <- 'Stem_PPvsPOU1'
+
+df_stat <- archr_helper_markerPeaks_converter(DARs[[contrast_name]])
+archr_peakset_Loc <- paste0(paste0(as.character(seqnames(proj@peakSet)), ':',
+                                   start(proj@peakSet),'-',end(proj@peakSet)))
+idx_matched <- match(rownames(df_stat), archr_peakset_Loc)
+peaks_info <- as.data.frame(proj@peakSet[idx_matched], row.names = NULL)
+df_stat <- bind_cols(df_stat, peaks_info)
+
+# export DARs in this contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC > cutoff_Log2FC), ]
+DARs_plot[[contrast_name]] <- rownames(df_stat_significant)
+
+# export DARs in the opposite contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC < 0-cutoff_Log2FC), ]
+DARs_plot[[contrast_name.2]] <- rownames(df_stat_significant)
+```
+
+```{r}
+contrast_name <- 'Stem_POUvsPP'
+contrast_name.2 <- 'Stem_PPvsPOU'
+  
+df_stat <- archr_helper_markerPeaks_converter(DARs[[contrast_name]])
+archr_peakset_Loc <- paste0(paste0(as.character(seqnames(proj@peakSet)), ':',
+                                   start(proj@peakSet),'-',end(proj@peakSet)))
+idx_matched <- match(rownames(df_stat), archr_peakset_Loc)
+peaks_info <- as.data.frame(proj@peakSet[idx_matched], row.names = NULL)
+df_stat <- bind_cols(df_stat, peaks_info)
+
+# export DARs in this contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC > cutoff_Log2FC), ]
+DARs_plot[[contrast_name]] <- rownames(df_stat_significant)
+
+# export DARs in the opposite contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC < 0-cutoff_Log2FC), ]
+DARs_plot[[contrast_name.2]] <- rownames(df_stat_significant)
+```
+
+```{r}
+contrast_name <- 'Stem_POU2vsPOU1'
+contrast_name.2 <- 'Stem_POU1vsPOU2'
+
+df_stat <- archr_helper_markerPeaks_converter(DARs[[contrast_name]])
+archr_peakset_Loc <- paste0(paste0(as.character(seqnames(proj@peakSet)), ':',
+                                   start(proj@peakSet),'-',end(proj@peakSet)))
+idx_matched <- match(rownames(df_stat), archr_peakset_Loc)
+peaks_info <- as.data.frame(proj@peakSet[idx_matched], row.names = NULL)
+df_stat <- bind_cols(df_stat, peaks_info)
+
+# export DARs in this contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC > cutoff_Log2FC), ]
+DARs_plot[[contrast_name]] <- rownames(df_stat_significant)
+
+# export DARs in the opposite contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC < 0-cutoff_Log2FC), ]
+DARs_plot[[contrast_name.2]] <- rownames(df_stat_significant)
+```
+
+
+```{r, fig.width=10}
+library(ComplexHeatmap)
+
+# upset(fromList(DARs_plot), order.by = "freq")
+m1 = make_comb_mat(DARs_plot, mode = "intersect")
+```
+
+
+```{r, fig.width=8, fig.height=5}
+pdf(paste0(out.dir, 'Stem', '.pdf'), width = 8, height = 5, pointsize = 1)
+
+m2 <- m1[comb_degree(m1)%in%c(1,2,3) & comb_size(m1) >= 0]
+ss <- set_size(m2)
+cs <- comb_size(m2)
+ht <- UpSet(m2,       
+      top_annotation = HeatmapAnnotation(
+        "# Open regions" = anno_barplot(cs, 
+                                        axis = T,
+                                        axis_param = list(gp=gpar(fontsize=8)),
+                                        ylim = c(0, max(cs)*1.1),
+                                        border = FALSE, 
+                                        gp = gpar(fill = "black"), 
+                                        height = unit(4, "cm")), 
+        annotation_name_side = "left", 
+        annotation_name_rot = 90,
+        annotation_name_gp= gpar(fontsize = 10)
+        ),
+      
+      right_annotation =  rowAnnotation(
+        "DARs per contrast" = anno_barplot(ss, 
+                                          baseline = 0,
+                                          axis = T,
+                                          axis_param = list(
+                                            gp=gpar(fontsize=10),
+                                            at = c(0, 1000, 2000),
+                                            labels = c(0, 1000, 2000),
+                                            labels_rot = 45),
+                                          border = FALSE, 
+                                          extend = 0.5,
+                                          gp = gpar(fill = "black"), 
+                                          width = unit(6, "cm")),
+        annotation_name_gp= gpar(fontsize = 12)
+
+    )
+)
+
+ht = draw(ht)
+od = column_order(ht)
+rod = row_order(ht)
+decorate_annotation(
+  "# Open regions", {
+    grid.text(cs[od], x = seq_along(cs), y = unit(cs[od], "native") + unit(2, "pt"),
+              default.units = "native", just = c("center", "bottom"),
+              gp = gpar(fontsize = 10, col = "black", lwd=3), rot = 0)})
+
+dev.off()
+```
+
+
+
+### Stromal
+
+```{r}
+DARs <- readRDS('~/yuzhao1/work/final_RC2atac/peaks/3DARs/DARs_Stromal.rds')
+temp_lineage <- 'others'
+cutoff_FDR <- 0.01 # cutoff is for peak selection, cutoffs for motifs are specificied in the text
+cutoff_Log2FC <- 1
+proj <- paste0('proj_', temp_lineage) %>% as.name(.) %>% eval(.)
+DARs_plot <- list()
+celltype <- 'Stromal'
+```
+
+```{r}
+contrast_name <- paste0(celltype, '_ACvsTI')
+contrast_name.2 <- paste0(celltype, '_TIvsAC')
+
+df_stat <- archr_helper_markerPeaks_converter(DARs[[contrast_name]])
+archr_peakset_Loc <- paste0(paste0(as.character(seqnames(proj@peakSet)), ':',
+                                   start(proj@peakSet),'-',end(proj@peakSet)))
+idx_matched <- match(rownames(df_stat), archr_peakset_Loc)
+peaks_info <- as.data.frame(proj@peakSet[idx_matched], row.names = NULL)
+df_stat <- bind_cols(df_stat, peaks_info)
+
+# export DARs in this contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC > cutoff_Log2FC), ]
+DARs_plot[[contrast_name]] <- rownames(df_stat_significant)
+
+# export DARs in the opposite contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC < 0-cutoff_Log2FC), ]
+DARs_plot[[contrast_name.2]] <- rownames(df_stat_significant)
+```
+
+```{r}
+contrast_name <- paste0(celltype, '_POUvsPP')
+contrast_name.2 <- paste0(celltype, '_PPvsPOU')
+
+df_stat <- archr_helper_markerPeaks_converter(DARs[[contrast_name]])
+archr_peakset_Loc <- paste0(paste0(as.character(seqnames(proj@peakSet)), ':',
+                                   start(proj@peakSet),'-',end(proj@peakSet)))
+idx_matched <- match(rownames(df_stat), archr_peakset_Loc)
+peaks_info <- as.data.frame(proj@peakSet[idx_matched], row.names = NULL)
+df_stat <- bind_cols(df_stat, peaks_info)
+
+# export DARs in this contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC > cutoff_Log2FC), ]
+DARs_plot[[contrast_name]] <- rownames(df_stat_significant)
+
+# export DARs in the opposite contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC < 0-cutoff_Log2FC), ]
+DARs_plot[[contrast_name.2]] <- rownames(df_stat_significant)
+```
+
+```{r, fig.width=10}
+library(ComplexHeatmap)
+m1 = make_comb_mat(DARs_plot, mode = "intersect")
+```
+
+
+```{r, fig.width=8, fig.height=5}
+pdf(paste0(out.dir, celltype, '.pdf'), width = 8, height = 5, pointsize = 1)
+
+m2 <- m1[comb_degree(m1)%in%c(1,2,3) & comb_size(m1) >= 0]
+ss <- set_size(m2)
+cs <- comb_size(m2)
+ht <- UpSet(m2,       
+      top_annotation = HeatmapAnnotation(
+        "# Open regions" = anno_barplot(cs, 
+                                        axis = T,
+                                        axis_param = list(gp=gpar(fontsize=8)),
+                                        ylim = c(0, max(cs)*1.1),
+                                        border = FALSE, 
+                                        gp = gpar(fill = "black"), 
+                                        height = unit(4, "cm")), 
+        annotation_name_side = "left", 
+        annotation_name_rot = 90,
+        annotation_name_gp= gpar(fontsize = 10)
+        ),
+      
+      right_annotation =  rowAnnotation(
+        "DARs per contrast" = anno_barplot(ss, 
+                                          baseline = 0,
+                                          axis = T,
+
+                                          border = FALSE, 
+                                          extend = 0.5,
+                                          gp = gpar(fill = "black"), 
+                                          width = unit(6, "cm")),
+        annotation_name_gp= gpar(fontsize = 12)
+
+    )
+)
+
+ht = draw(ht)
+od = column_order(ht)
+rod = row_order(ht)
+decorate_annotation(
+  "# Open regions", {
+    grid.text(cs[od], x = seq_along(cs), y = unit(cs[od], "native") + unit(2, "pt"),
+              default.units = "native", just = c("center", "bottom"),
+              gp = gpar(fontsize = 10, col = "black", lwd=3), rot = 0)})
+
+dev.off()
+```
+
+
+
+### Macrophage
+
+```{r}
+  DARs <- readRDS('~/yuzhao1/work/final_RC2atac/peaks/3DARs/DARs_Macrophage.rds')
+temp_lineage <- 'myeloid'
+cutoff_FDR <- 0.01 # cutoff is for peak selection, cutoffs for motifs are specificied in the text
+cutoff_Log2FC <- 1
+proj <- paste0('proj_', temp_lineage) %>% as.name(.) %>% eval(.)
+DARs_plot <- list()
+celltype <- 'Macrophage'
+```
+
+```{r}
+contrast_name <- paste0(celltype, '_ACvsTI')
+contrast_name.2 <- paste0(celltype, '_TIvsAC')
+
+df_stat <- archr_helper_markerPeaks_converter(DARs[[contrast_name]])
+archr_peakset_Loc <- paste0(paste0(as.character(seqnames(proj@peakSet)), ':',
+                                   start(proj@peakSet),'-',end(proj@peakSet)))
+idx_matched <- match(rownames(df_stat), archr_peakset_Loc)
+peaks_info <- as.data.frame(proj@peakSet[idx_matched], row.names = NULL)
+df_stat <- bind_cols(df_stat, peaks_info)
+
+# export DARs in this contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC > cutoff_Log2FC), ]
+DARs_plot[[contrast_name]] <- rownames(df_stat_significant)
+
+# export DARs in the opposite contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC < 0-cutoff_Log2FC), ]
+DARs_plot[[contrast_name.2]] <- rownames(df_stat_significant)
+```
+
+```{r}
+contrast_name <- paste0(celltype, '_POUvsPP')
+contrast_name.2 <- paste0(celltype, '_PPvsPOU')
+
+df_stat <- archr_helper_markerPeaks_converter(DARs[[contrast_name]])
+archr_peakset_Loc <- paste0(paste0(as.character(seqnames(proj@peakSet)), ':',
+                                   start(proj@peakSet),'-',end(proj@peakSet)))
+idx_matched <- match(rownames(df_stat), archr_peakset_Loc)
+peaks_info <- as.data.frame(proj@peakSet[idx_matched], row.names = NULL)
+df_stat <- bind_cols(df_stat, peaks_info)
+
+# export DARs in this contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC > cutoff_Log2FC), ]
+DARs_plot[[contrast_name]] <- rownames(df_stat_significant)
+
+# export DARs in the opposite contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC < 0-cutoff_Log2FC), ]
+DARs_plot[[contrast_name.2]] <- rownames(df_stat_significant)
+```
+
+```{r, fig.width=10}
+library(ComplexHeatmap)
+m1 = make_comb_mat(DARs_plot, mode = "intersect")
+```
+
+
+```{r, fig.width=8, fig.height=5}
+pdf(paste0(out.dir, celltype, '.pdf'), width = 8, height = 5, pointsize = 1)
+
+m2 <- m1[comb_degree(m1)%in%c(1,2,3) & comb_size(m1) >= 0]
+ss <- set_size(m2)
+cs <- comb_size(m2)
+ht <- UpSet(m2,       
+      top_annotation = HeatmapAnnotation(
+        "# Open regions" = anno_barplot(cs, 
+                                        axis = T,
+                                        axis_param = list(gp=gpar(fontsize=8)),
+                                        ylim = c(0, max(cs)*1.1),
+                                        border = FALSE, 
+                                        gp = gpar(fill = "black"), 
+                                        height = unit(4, "cm")), 
+        annotation_name_side = "left", 
+        annotation_name_rot = 90,
+        annotation_name_gp= gpar(fontsize = 10)
+        ),
+      
+      right_annotation =  rowAnnotation(
+        "DARs per contrast" = anno_barplot(ss, 
+                                          baseline = 0,
+                                          axis = T,
+
+                                          border = FALSE, 
+                                          extend = 0.5,
+                                          gp = gpar(fill = "black"), 
+                                          width = unit(6, "cm")),
+        annotation_name_gp= gpar(fontsize = 12)
+
+    )
+)
+
+ht = draw(ht)
+od = column_order(ht)
+rod = row_order(ht)
+decorate_annotation(
+  "# Open regions", {
+    grid.text(cs[od], x = seq_along(cs), y = unit(cs[od], "native") + unit(2, "pt"),
+              default.units = "native", just = c("center", "bottom"),
+              gp = gpar(fontsize = 10, col = "black", lwd=3), rot = 0)})
+
+dev.off()
+```
+
+
+
+### CD4T
+
+```{r}
+DARs <- readRDS('~/yuzhao1/work/final_RC2atac/peaks/3DARs/DARs_CD4T.rds')
+temp_lineage <- 'tcell'
+cutoff_FDR <- 0.01 # cutoff is for peak selection, cutoffs for motifs are specificied in the text
+cutoff_Log2FC <- 1
+proj <- paste0('proj_', temp_lineage) %>% as.name(.) %>% eval(.)
+DARs_plot <- list()
+celltype <- 'CD4T'
+```
+
+```{r}
+contrast_name <- paste0(celltype, '_ACvsTI')
+contrast_name.2 <- paste0(celltype, '_TIvsAC')
+
+df_stat <- archr_helper_markerPeaks_converter(DARs[[contrast_name]])
+archr_peakset_Loc <- paste0(paste0(as.character(seqnames(proj@peakSet)), ':',
+                                   start(proj@peakSet),'-',end(proj@peakSet)))
+idx_matched <- match(rownames(df_stat), archr_peakset_Loc)
+peaks_info <- as.data.frame(proj@peakSet[idx_matched], row.names = NULL)
+df_stat <- bind_cols(df_stat, peaks_info)
+
+# export DARs in this contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC > cutoff_Log2FC), ]
+DARs_plot[[contrast_name]] <- rownames(df_stat_significant)
+
+# export DARs in the opposite contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC < 0-cutoff_Log2FC), ]
+DARs_plot[[contrast_name.2]] <- rownames(df_stat_significant)
+```
+
+```{r}
+contrast_name <- paste0(celltype, '_POUvsPP')
+contrast_name.2 <- paste0(celltype, '_PPvsPOU')
+
+df_stat <- archr_helper_markerPeaks_converter(DARs[[contrast_name]])
+archr_peakset_Loc <- paste0(paste0(as.character(seqnames(proj@peakSet)), ':',
+                                   start(proj@peakSet),'-',end(proj@peakSet)))
+idx_matched <- match(rownames(df_stat), archr_peakset_Loc)
+peaks_info <- as.data.frame(proj@peakSet[idx_matched], row.names = NULL)
+df_stat <- bind_cols(df_stat, peaks_info)
+
+# export DARs in this contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC > cutoff_Log2FC), ]
+DARs_plot[[contrast_name]] <- rownames(df_stat_significant)
+
+# export DARs in the opposite contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC < 0-cutoff_Log2FC), ]
+DARs_plot[[contrast_name.2]] <- rownames(df_stat_significant)
+```
+
+```{r, fig.width=10}
+library(ComplexHeatmap)
+m1 = make_comb_mat(DARs_plot, mode = "intersect")
+```
+
+
+```{r, fig.width=8, fig.height=5}
+pdf(paste0(out.dir, celltype, '.pdf'), width = 8, height = 5, pointsize = 1)
+
+m2 <- m1[comb_degree(m1)%in%c(1,2,3) & comb_size(m1) >= 0]
+ss <- set_size(m2)
+cs <- comb_size(m2)
+ht <- UpSet(m2,       
+      top_annotation = HeatmapAnnotation(
+        "# Open regions" = anno_barplot(cs, 
+                                        axis = T,
+                                        axis_param = list(gp=gpar(fontsize=8)),
+                                        ylim = c(0, max(cs)*1.1),
+                                        border = FALSE, 
+                                        gp = gpar(fill = "black"), 
+                                        height = unit(4, "cm")), 
+        annotation_name_side = "left", 
+        annotation_name_rot = 90,
+        annotation_name_gp= gpar(fontsize = 10)
+        ),
+      
+      right_annotation =  rowAnnotation(
+        "DARs per contrast" = anno_barplot(ss, 
+                                          baseline = 0,
+                                          axis = T,
+
+                                          border = FALSE, 
+                                          extend = 0.5,
+                                          gp = gpar(fill = "black"), 
+                                          width = unit(6, "cm")),
+        annotation_name_gp= gpar(fontsize = 12)
+
+    )
+)
+
+ht = draw(ht)
+od = column_order(ht)
+rod = row_order(ht)
+decorate_annotation(
+  "# Open regions", {
+    grid.text(cs[od], x = seq_along(cs), y = unit(cs[od], "native") + unit(2, "pt"),
+              default.units = "native", just = c("center", "bottom"),
+              gp = gpar(fontsize = 10, col = "black", lwd=3), rot = 0)})
+
+dev.off()
+```
+
+
+### gdT
+
+```{r}
+DARs <- readRDS('~/yuzhao1/work/final_RC2atac/peaks/3DARs/DARs_gdT.rds')
+temp_lineage <- 'tcell'
+cutoff_FDR <- 0.01 # cutoff is for peak selection, cutoffs for motifs are specificied in the text
+cutoff_Log2FC <- 1
+proj <- paste0('proj_', temp_lineage) %>% as.name(.) %>% eval(.)
+DARs_plot <- list()
+celltype <- 'gdT'
+```
+
+```{r}
+contrast_name <- paste0(celltype, '_ACvsTI')
+contrast_name.2 <- paste0(celltype, '_TIvsAC')
+
+df_stat <- archr_helper_markerPeaks_converter(DARs[[contrast_name]])
+archr_peakset_Loc <- paste0(paste0(as.character(seqnames(proj@peakSet)), ':',
+                                   start(proj@peakSet),'-',end(proj@peakSet)))
+idx_matched <- match(rownames(df_stat), archr_peakset_Loc)
+peaks_info <- as.data.frame(proj@peakSet[idx_matched], row.names = NULL)
+df_stat <- bind_cols(df_stat, peaks_info)
+
+# export DARs in this contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC > cutoff_Log2FC), ]
+DARs_plot[[contrast_name]] <- rownames(df_stat_significant)
+
+# export DARs in the opposite contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC < 0-cutoff_Log2FC), ]
+DARs_plot[[contrast_name.2]] <- rownames(df_stat_significant)
+```
+
+```{r}
+contrast_name <- paste0(celltype, '_POUvsPP')
+contrast_name.2 <- paste0(celltype, '_PPvsPOU')
+
+df_stat <- archr_helper_markerPeaks_converter(DARs[[contrast_name]])
+archr_peakset_Loc <- paste0(paste0(as.character(seqnames(proj@peakSet)), ':',
+                                   start(proj@peakSet),'-',end(proj@peakSet)))
+idx_matched <- match(rownames(df_stat), archr_peakset_Loc)
+peaks_info <- as.data.frame(proj@peakSet[idx_matched], row.names = NULL)
+df_stat <- bind_cols(df_stat, peaks_info)
+
+# export DARs in this contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC > cutoff_Log2FC), ]
+DARs_plot[[contrast_name]] <- rownames(df_stat_significant)
+
+# export DARs in the opposite contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC < 0-cutoff_Log2FC), ]
+DARs_plot[[contrast_name.2]] <- rownames(df_stat_significant)
+```
+
+```{r, fig.width=10}
+# No DARs at all
+library(ComplexHeatmap)
+m1 = make_comb_mat(DARs_plot, mode = "intersect")
+```
+
+
+```{r, fig.width=8, fig.height=5}
+pdf(paste0(out.dir, celltype, '.pdf'), width = 8, height = 5, pointsize = 1)
+
+m2 <- m1[comb_degree(m1)%in%c(1,2,3) & comb_size(m1) >= 0]
+ss <- set_size(m2)
+cs <- comb_size(m2)
+ht <- UpSet(m2,       
+      top_annotation = HeatmapAnnotation(
+        "# Open regions" = anno_barplot(cs, 
+                                        axis = T,
+                                        axis_param = list(gp=gpar(fontsize=8)),
+                                        ylim = c(0, max(cs)*1.1),
+                                        border = FALSE, 
+                                        gp = gpar(fill = "black"), 
+                                        height = unit(4, "cm")), 
+        annotation_name_side = "left", 
+        annotation_name_rot = 90,
+        annotation_name_gp= gpar(fontsize = 10)
+        ),
+      
+      right_annotation =  rowAnnotation(
+        "DARs per contrast" = anno_barplot(ss, 
+                                          baseline = 0,
+                                          axis = T,
+
+                                          border = FALSE, 
+                                          extend = 0.5,
+                                          gp = gpar(fill = "black"), 
+                                          width = unit(6, "cm")),
+        annotation_name_gp= gpar(fontsize = 12)
+
+    )
+)
+
+ht = draw(ht)
+od = column_order(ht)
+rod = row_order(ht)
+decorate_annotation(
+  "# Open regions", {
+    grid.text(cs[od], x = seq_along(cs), y = unit(cs[od], "native") + unit(2, "pt"),
+              default.units = "native", just = c("center", "bottom"),
+              gp = gpar(fontsize = 10, col = "black", lwd=3), rot = 0)})
+
+dev.off()
+```
+
+
+
+### CD8T
+
+```{r}
+DARs <- readRDS('~/yuzhao1/work/final_RC2atac/peaks/3DARs/DARs_CD8T.rds')
+temp_lineage <- 'tcell'
+cutoff_FDR <- 0.01 # cutoff is for peak selection, cutoffs for motifs are specificied in the text
+cutoff_Log2FC <- 1
+proj <- paste0('proj_', temp_lineage) %>% as.name(.) %>% eval(.)
+DARs_plot <- list()
+celltype <- 'CD8T'
+```
+
+```{r}
+contrast_name <- paste0(celltype, '_ACvsTI')
+contrast_name.2 <- paste0(celltype, '_TIvsAC')
+
+df_stat <- archr_helper_markerPeaks_converter(DARs[[contrast_name]])
+archr_peakset_Loc <- paste0(paste0(as.character(seqnames(proj@peakSet)), ':',
+                                   start(proj@peakSet),'-',end(proj@peakSet)))
+idx_matched <- match(rownames(df_stat), archr_peakset_Loc)
+peaks_info <- as.data.frame(proj@peakSet[idx_matched], row.names = NULL)
+df_stat <- bind_cols(df_stat, peaks_info)
+
+# export DARs in this contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC > cutoff_Log2FC), ]
+DARs_plot[[contrast_name]] <- rownames(df_stat_significant)
+
+# export DARs in the opposite contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC < 0-cutoff_Log2FC), ]
+DARs_plot[[contrast_name.2]] <- rownames(df_stat_significant)
+```
+
+```{r}
+contrast_name <- paste0(celltype, '_POUvsPP')
+contrast_name.2 <- paste0(celltype, '_PPvsPOU')
+
+df_stat <- archr_helper_markerPeaks_converter(DARs[[contrast_name]])
+archr_peakset_Loc <- paste0(paste0(as.character(seqnames(proj@peakSet)), ':',
+                                   start(proj@peakSet),'-',end(proj@peakSet)))
+idx_matched <- match(rownames(df_stat), archr_peakset_Loc)
+peaks_info <- as.data.frame(proj@peakSet[idx_matched], row.names = NULL)
+df_stat <- bind_cols(df_stat, peaks_info)
+
+# export DARs in this contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC > cutoff_Log2FC), ]
+DARs_plot[[contrast_name]] <- rownames(df_stat_significant)
+
+# export DARs in the opposite contrast
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC < 0-cutoff_Log2FC), ]
+DARs_plot[[contrast_name.2]] <- rownames(df_stat_significant)
+```
+
+```{r, fig.width=10}
+# No DARs at all
+library(ComplexHeatmap)
+m1 = make_comb_mat(DARs_plot, mode = "intersect")
+```
+
+
+```{r, fig.width=8, fig.height=5}
+pdf(paste0(out.dir, celltype, '.pdf'), width = 8, height = 5, pointsize = 1)
+
+m2 <- m1[comb_degree(m1)%in%c(1,2,3) & comb_size(m1) >= 0]
+ss <- set_size(m2)
+cs <- comb_size(m2)
+ht <- UpSet(m2,       
+      top_annotation = HeatmapAnnotation(
+        "# Open regions" = anno_barplot(cs, 
+                                        axis = T,
+                                        axis_param = list(gp=gpar(fontsize=8)),
+                                        ylim = c(0, max(cs)*1.1),
+                                        border = FALSE, 
+                                        gp = gpar(fill = "black"), 
+                                        height = unit(4, "cm")), 
+        annotation_name_side = "left", 
+        annotation_name_rot = 90,
+        annotation_name_gp= gpar(fontsize = 10)
+        ),
+      
+      right_annotation =  rowAnnotation(
+        "DARs per contrast" = anno_barplot(ss, 
+                                          baseline = 0,
+                                          axis = T,
+
+                                          border = FALSE, 
+                                          extend = 0.5,
+                                          gp = gpar(fill = "black"), 
+                                          width = unit(6, "cm")),
+        annotation_name_gp= gpar(fontsize = 12)
+
+    )
+)
+
+ht = draw(ht)
+od = column_order(ht)
+rod = row_order(ht)
+decorate_annotation(
+  "# Open regions", {
+    grid.text(cs[od], x = seq_along(cs), y = unit(cs[od], "native") + unit(2, "pt"),
+              default.units = "native", just = c("center", "bottom"),
+              gp = gpar(fontsize = 10, col = "black", lwd=3), rot = 0)})
+
+dev.off()
+```
+
+
+

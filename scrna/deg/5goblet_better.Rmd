@@ -1,0 +1,75 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(limma)
+library(edgeR)
+library(variancePartition)
+library(BiocParallel)
+library(tidyverse)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+source('/project/gca/yuzhao1/scripts/seurat/deg_pseudobulk.R')
+source('~/yuzhao1/scripts/deg_dep_utils.R')
+```
+
+```{r, include = F, eval=F}
+epithelial <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/epithelial3.rds')
+```
+
+```{r}
+seurat <- epithelial
+seurat$anno1[seurat$anno1 %in% c("Goblet1") & seurat$biopsy_location =='POU'] <- 'Goblet-POU1'
+seurat$anno1[seurat$anno1 %in% c("Goblet2") & seurat$biopsy_location =='POU'] <- 'Goblet-POU2'
+seurat$anno1[seurat$anno1 %in% c("Goblet1", "Goblet2") & seurat$biopsy_location =='PP'] <- 'Goblet-PP'
+seurat$anno1[seurat$anno1 %in% c("Goblet1", "Goblet2") & seurat$biopsy_location =='TI'] <- 'Goblet-TI'
+seurat$anno1[seurat$anno1 %in% c("Goblet1", "Goblet2") & seurat$biopsy_location =='AC'] <- 'Goblet-AC'
+unique(seurat$anno1)
+```
+
+```{r}
+POU_GB2vsAC <- FindMarkers(seurat, ident.1 = 'Goblet-POU2', ident.2 = 'Goblet-AC', group.by = 'anno1', logfc.threshold = 0.5)
+saveRDS(POU_GB2vsAC, '~/yuzhao1/work/manu/rc2/plots/2rna_degs_volcano_others/POU_GB2vsAC.rds')
+```
+
+```{r}
+POU_GB2vsGB1 <- FindMarkers(seurat, ident.1 = 'Goblet-POU2', ident.2 = 'Goblet-POU1', group.by = 'anno1', logfc.threshold = 0.5)
+saveRDS(POU_GB2vsGB1, '~/yuzhao1/work/manu/rc2/plots/2rna_degs_volcano_others/POU_GB2vsGB1.rds')
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,204 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(zoo)
+library(Seurat)
+source('~/yuzhao1/scripts/plot.R')
+source('~/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('~/yuzhao1/work/manu/rc2/scripts/rna_deg_markers.R')
+```
+
+```{r}
+dir.out <- '~/yuzhao1/work/manu/rc2/plots/3pseudotime_rna/'
+```
+
+
+```{r, include = F, eval=F}
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+epithelial <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/epithelial3.rds')
+```
+
+```{r}
+seurat <- subset(epithelial, cells = Cells(epithelial)[epithelial$biopsy_location %in% c('AC', 'TI')])
+```
+
+```{r}
+ann.meta <- read.table('~/yuzhao1/work/final_RC2rna/celloracle/exported_Anndata_metadata/acti.csv', 
+                       header = T, sep = ',')
+colnames(ann.meta)[[1]] <- 'cellID'
+meta.toadd <- ann.meta[, c('cellID', "Lineage_EC1", "Lineage_EC2", "Pseudotime_Lineage_EC1", "Pseudotime_Lineage_EC2", "Pseudotime")]
+rownames(meta.toadd) <- meta.toadd$cellID
+seurat <- AddMetaData(seurat, meta.toadd)
+```
+
+```{r}
+seuratL1 <- subset(seurat, Lineage_EC1 == 'True')
+seuratL2 <- subset(seurat, Lineage_EC2 == 'True')
+seuratL1 <- FindVariableFeatures(seuratL1, nfeatures = 100)
+seuratL2 <- FindVariableFeatures(seuratL2, nfeatures = 100)
+
+```
+
+
+```{r, eval=F}
+genes_of_interest <- c('REG1A', 'DMBT1', 'SPINK1', 'MUC2', 'OLFM4',
+            'ADH1C', 'SATB2', 'CEACAM7', 'CA2', 'AQP8', 'HES1', 'NXPE4', 'HMGCS2',
+            'RPSA', 'CFTR', 'RPL11', 'CEACAM5', 'SOX9', 'MECOM', 'TFCP2L1', 'CD24','FCGBP',
+            'LCN2',
+            'SLC7A7', 'GSTA1', 'ACE2', 'RBP2', 'APOA4', 'FABP6', 'HLA−DRA','ABCC2', 'ENPEP',
+            'EFNA1', 'SAE1',
+            'APOA1','APOB', 'SELENOP', 'TRPM6'
+            ) %>% union(., VariableFeatures(seuratL1)) %>% union(., unlist(rna.epithelial.markers)) %>% unique()
+df <- FetchData(seuratL1, genes_of_interest)
+df <- as.data.frame(df)
+df$Pseudotime <- seuratL1$Pseudotime
+df <- df[order(df$Pseudotime, decreasing = F), ]
+df <- t(df)
+df <- df[1:(nrow(df)-1), ]
+window <- 50
+step <- 25
+df2 <- zoo::rollapply(t(df), width=window, by=step, FUN=mean) %>% t()
+df2 <- df2 %>% t() %>% scale() %>% t() 
+
+# sorts the rows of df2 based on the index of the maximum value in each row
+df2 <- df2[order(apply(df2, 1, which.max)), ]
+pdf(paste0(dir.out, 'acti_EC1.pdf'), width = 7, height = 25, pointsize = 1)
+p <- Heatmap(
+   df2,
+   # col = rc2_rna_heatmap_colors_gradient1, 
+   cluster_rows=F, cluster_columns=FALSE,
+   show_row_names=T, show_column_names=FALSE
+)
+print(p)
+dev.off()
+```
+
+
+```{r, eval=F}
+tfs <- readLines('~/yuzhao1/resource/scenic/utoronto_human_tfs_v_1.01.txt')
+genes_of_interest <- c('REG1A', 'DMBT1', 'SPINK1', 'MUC2', 'OLFM4',
+            'ADH1C', 'SATB2', 'CEACAM7', 'CA2', 'AQP8', 'HES1', 'NXPE4', 'HMGCS2',
+            'RPSA', 'CFTR', 'RPL11', 'CEACAM5', 'SOX9', 'MECOM', 'TFCP2L1', 'CD24','FCGBP',
+            'LCN2',
+            'SLC7A7', 'GSTA1', 'ACE2', 'RBP2', 'APOA4', 'FABP6', 'HLA−DRA','ABCC2', 'ENPEP',
+            'EFNA1', 'SAE1',
+            'APOA1','APOB', 'SELENOP', 'TRPM6'
+            ) %>% union(., VariableFeatures(seuratL1)) %>% union(., unlist(rna.epithelial.markers))%>% 
+   union(., rna_deg_markers_ec_tfs) %>% intersect(., tfs)
+df <- FetchData(seuratL1, genes_of_interest)
+df <- as.data.frame(df)
+df$Pseudotime <- seuratL1$Pseudotime
+df <- df[order(df$Pseudotime, decreasing = F), ]
+df <- t(df)
+df <- df[1:(nrow(df)-1), ]
+window <- 50
+step <- 25
+df2 <- zoo::rollapply(t(df), width=window, by=step, FUN=mean) %>% t()
+df2 <- df2 %>% t() %>% scale() %>% t() 
+
+# sorts the rows of df2 based on the index of the maximum value in each row
+df2 <- df2[order(apply(df2, 1, which.max)), ]
+pdf(paste0(dir.out, 'acti_EC1_tf.pdf'), width = 7, height =10, pointsize = 1)
+p <- Heatmap(
+   df2,
+   # col = rc2_rna_heatmap_colors_gradient1, 
+   cluster_rows=F, cluster_columns=FALSE,
+   show_row_names=T, show_column_names=FALSE
+)
+print(p)
+dev.off()
+```
+
+
+```{r, eval=F}
+genes_of_interest <- c('REG1A', 'DMBT1', 'SPINK1', 'MUC2', 'OLFM4',
+            'ADH1C', 'SATB2', 'CEACAM7', 'CA2', 'AQP8', 'HES1', 'NXPE4', 'HMGCS2',
+            'RPSA', 'CFTR', 'RPL11', 'CEACAM5', 'SOX9', 'MECOM', 'TFCP2L1', 'CD24','FCGBP',
+            'LCN2',
+            'SLC7A7', 'GSTA1', 'ACE2', 'RBP2', 'APOA4', 'FABP6', 'HLA−DRA','ABCC2', 'ENPEP',
+            'EFNA1', 'SAE1',
+            'APOA1','APOB', 'SELENOP', 'TRPM6'
+            ) %>% union(., VariableFeatures(seuratL2))
+df <- FetchData(seuratL2, genes_of_interest)
+df <- as.data.frame(df)
+df$Pseudotime <- seuratL2$Pseudotime
+df <- df[order(df$Pseudotime, decreasing = F), ]
+df <- t(df)
+df <- df[1:(nrow(df)-1), ]
+window <- 30
+step <- 15
+df2 <- zoo::rollapply(t(df), width=window, by=step, FUN=mean) %>% t()
+df2 <- df2 %>% t() %>% scale() %>% t() 
+
+df2 <- df2[order(apply(df2, 1, which.max)), ]
+pdf(paste0(dir.out, 'acti_EC2.pdf'), width = 7, height = 19, pointsize = 1)
+p <- Heatmap(
+   df2,
+   # col = rc2_rna_heatmap_colors_gradient1, 
+   cluster_rows=F, cluster_columns=FALSE,
+   show_row_names=T, show_column_names=FALSE
+)
+print(p)
+dev.off()
+```
+
+
+```{r, eval=F}
+tfs <- readLines('~/yuzhao1/resource/scenic/utoronto_human_tfs_v_1.01.txt')
+genes_of_interest <- c('REG1A', 'DMBT1', 'SPINK1', 'MUC2', 'OLFM4',
+            'ADH1C', 'SATB2', 'CEACAM7', 'CA2', 'AQP8', 'HES1', 'NXPE4', 'HMGCS2',
+            'RPSA', 'CFTR', 'RPL11', 'CEACAM5', 'SOX9', 'MECOM', 'TFCP2L1', 'CD24','FCGBP',
+            'LCN2',
+            'SLC7A7', 'GSTA1', 'ACE2', 'RBP2', 'APOA4', 'FABP6', 'HLA−DRA','ABCC2', 'ENPEP',
+            'EFNA1', 'SAE1',
+            'APOA1','APOB', 'SELENOP', 'TRPM6'
+            ) %>% union(., VariableFeatures(seuratL2)) %>% union(., unlist(rna.epithelial.markers))%>% 
+   union(., rna_deg_markers_ec_tfs) %>% intersect(., tfs)
+df <- FetchData(seuratL2, genes_of_interest)
+df <- as.data.frame(df)
+df$Pseudotime <- seuratL2$Pseudotime
+df <- df[order(df$Pseudotime, decreasing = F), ]
+df <- t(df)
+df <- df[1:(nrow(df)-1), ]
+window <- 20
+step <- 10
+df2 <- zoo::rollapply(t(df), width=window, by=step, FUN=mean) %>% t()
+df2 <- df2 %>% t() %>% scale() %>% t() 
+
+# sorts the rows of df2 based on the index of the maximum value in each row
+df2 <- df2[order(apply(df2, 1, which.max)), ]
+pdf(paste0(dir.out, 'acti_EC2_tf.pdf'), width = 7, height =10, pointsize = 1)
+p <- Heatmap(
+   df2,
+   # col = rc2_rna_heatmap_colors_gradient1, 
+   cluster_rows=F, cluster_columns=FALSE,
+   show_row_names=T, show_column_names=FALSE
+)
+print(p)
+dev.off()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

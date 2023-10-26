@@ -1,0 +1,246 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(limma)
+library(edgeR)
+library(variancePartition)
+library(BiocParallel)
+# library(tidyverse)
+library(ComplexHeatmap)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_deg_markers.R')
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+source('/project/gca/yuzhao1/scripts/seurat/deg_pseudobulk.R')
+```
+
+```{r, include = F, eval=F}
+union <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/gut_filtered.rds')
+seurat <- subset(union, cells = Cells(union)[union$anno1 %in% c('EC1-1', 'EC1-2', "EC2-1", "EC2-2")])
+seurat$anno1 <- seurat$anno1_loc
+seurat$anno1 <- factor(seurat$anno1, levels = c('EC-AC', 'EC-POU2', 'EC-POU1', 'EC-PP', 'EC-TI'))
+```
+
+### 1. EC
+
+```{r}
+out.dir <- '~/yuzhao1/work/manu/rc2/plots/2rna_deg_heatmap_categorized/'
+```
+
+```{r}
+markers <- readRDS('~/yuzhao1/work/final_RC2rna/deg/epithelial/ec/markers_filtered_logFC1_p0.05.rds')
+pathways <- readRDS('~/yuzhao1/work/final_RC2rna/deg/epithelial/ec/pathways.rds')
+markers.vectors <- list()
+names(markers)
+```
+
+```{r}
+temp <- markers[["TIvsAC"]]
+markers.vectors[['TIvsAC']] <- rownames(temp)[temp[['logFC']] > 1]
+markers.vectors[['ACvsTI']] <- rownames(temp)[temp[['logFC']] < -1]
+
+temp <- markers[["PPvsPOU_EC2"]]
+markers.vectors[['PPvsPOU_EC2']] <- rownames(temp)[temp[['logFC']] > 1]
+markers.vectors[['POU_EC2vsPP']] <- rownames(temp)[temp[['logFC']] < -1]
+
+temp <- markers[["POU_EC2vsPOU_EC1"]]
+markers.vectors[['POU_EC2vsPOU_EC1']] <- rownames(temp)[temp[['logFC']] > 1]
+markers.vectors[['POU_EC1vsPOU_EC2']] <- rownames(temp)[temp[['logFC']] < -1]
+
+temp <- markers[["POU_EC2vsAC"]]
+markers.vectors[["POU_EC2vsAC"]] <- rownames(temp)[temp[['avg_log2FC']] > 1]
+markers.vectors[["ACvsPOU_EC2"]] <- rownames(temp)[temp[['avg_log2FC']] < -1]
+
+temp <- markers[["PPvsPOU_EC1"]]
+markers.vectors[["PPvsPOU_EC1"]] <- rownames(temp)[temp[['logFC']] > 1]
+markers.vectors[["POU_EC1vsPP"]] <- rownames(temp)[temp[['logFC']] < -1]
+
+temp <- markers[["PPvsTI"]]
+markers.vectors[["PPvsTI"]] <- rownames(temp)[temp[['logFC']] > 1]
+markers.vectors[["TIvsPP"]] <- rownames(temp)[temp[['logFC']] < -1]
+```
+
+```{r}
+for (temp in names(markers.vectors)) {
+  markers.vectors[[temp]] <- intersect(markers.vectors[[temp]], rownames(seurat))
+}
+```
+
+
+```{r}
+genes <- unique(unlist(markers.vectors))
+
+group1 <- intersect(markers.vectors[['ACvsTI']], markers.vectors[['POU_EC2vsPP']])
+group2 <- setdiff(markers.vectors[['ACvsTI']], markers.vectors[['POU_EC2vsPP']])
+group3 <- setdiff(markers.vectors[['POU_EC2vsPP']], markers.vectors[['ACvsTI']])
+group4 <- setdiff(markers.vectors[['POU_EC2vsPOU_EC1']],
+                  unique(c(markers.vectors[['ACvsTI']], markers.vectors[['POU_EC2vsPP']])))
+
+group5 <- intersect(markers.vectors[['TIvsAC']], markers.vectors[['PPvsPOU_EC2']])
+group6 <- setdiff(markers.vectors[['TIvsAC']], markers.vectors[['PPvsPOU_EC2']])
+group7<- setdiff(markers.vectors[['PPvsPOU_EC2']], 
+                  unique(c(markers.vectors[['TIvsAC']])))
+group8 <- setdiff(markers.vectors[['POU_EC1vsPOU_EC2']], 
+                  unique(c(markers.vectors[['TIvsAC']], markers.vectors[['PPvsPOU_EC2']])))
+
+group9 <- markers.vectors$PPvsPOU_EC1
+group10 <- markers.vectors$POU_EC1vsPP
+
+group1to10 <- unique(c(group1, group2, group3, group4, group5, group6, 
+                       group7, group8, group9, group10))
+
+group11 <- setdiff(genes, group1to10)
+
+genes <- c(group1to10, group11)
+
+df_levels <- data.frame(row.names = genes,
+                        matrix(0, 
+                               nrow = length(genes),
+                               ncol = 1))
+colnames(df_levels) <- c('group')
+for (gene in genes) {
+  for (kk in 1:11) {
+    group <- eval(as.name(paste0('group', kk)))
+    if(gene %in% group){
+      df_levels[gene, 'group'] <- kk
+      break
+    }
+  }
+}
+```
+
+
+```{r}
+labels <- c('DMBT1',  'MUC2', 'OLFM4',  'LCN2',
+            'ADH1C', 'SATB2', 'CEACAM7', 'CA2', 'AQP8', 'HES1', 'NXPE4', 'HMGCS2',
+            'RPSA', 'CFTR', 'RPL11', 'CEACAM5', 'SOX9', 'MECOM', 'TFCP2L1', 'CD24','FCGBP',
+            'GSTA1', 'ACE2', 'RBP2', 'APOA4', 'FABP6', 'HLA−DRA','ABCC2', 'ENPEP',
+            'SELENOP', 'TRPM6', 
+            "REG1B", "FOXD1", "GATA5", "KLF7", "REG4", "IRF8", 
+            "STAT6", "STAT5", "SATB1", 
+            "HOXB7","MT1A", "KLF11" ,"MT1A", "ABCB9",
+            "REG3A","TUBA1B",  "CELA3B",
+            "FABP1", "KRT20","ZBTB7B",
+            "DEFA6", "DEFA5", "CLCA1", "TFF1", 'ATOH1',
+            'GUCA2B'
+            )
+out.dir <- '~/yuzhao1/work/manu/rc2/plots/2rna_deg_heatmap_categorized/'
+plot.title <- 'ec_dense_updated'
+plot.height <- 10
+
+```
+
+
+
+```{r}
+Average.expression.mtx <- AverageExpression(
+  seurat,
+  assays = 'RNA',
+  features = genes,
+  return.seurat = FALSE,
+  group.by = "anno1",
+  add.ident = NULL,
+  slot = "data",
+  verbose = TRUE
+)
+Average.expression.mtx <- Average.expression.mtx$RNA %>% t(.) %>% scale(.) %>% t(.)
+```
+
+
+```{r, fig.height=15, fig.width=4}
+library(ComplexHeatmap)
+labels.idx <- match(labels, rownames(Average.expression.mtx))
+
+pdf(paste0(out.dir, plot.title , '_location.pdf'), width = 5, height = 6)
+p1 <- Heatmap(Average.expression.mtx, col = rc2_rna_heatmap_colors_gradient1,
+              cluster_columns = F, cluster_rows = F,
+              show_row_dend = F, show_column_dend = F, show_row_names = F,
+              
+              row_split = factor(paste0('group', df_levels[['group']]),
+                                 levels = paste0('group', 1:11)),
+              
+              row_title = NULL,
+              row_gap = unit(1, "mm"), column_gap = unit(0, "mm"), 
+              border = T,
+              border_gp = gpar(col = "black", lty = 1, lwd = 0),
+              
+              heatmap_legend_param = list(title = "Mean expression z score"),
+              use_raster = F)+
+  rowAnnotation(link = anno_mark(at = labels.idx, labels = labels, labels_gp = gpar(col = "black", fontsize = 5)), 
+                width = unit(0.1, "cm") + 
+                max_text_width(labels))
+
+print(p1)
+dev.off()
+```
+
+
+
+```{r}
+seurat$anno1_patient <- paste0(seurat$anno1, '-', seurat$Patient_ID)
+patients_control <- grep('HA', unique(seurat$Patient_ID), value = T)
+patients_uc <- c("OR109",  "OR48",  "OR102", "OR101", "OR43",  "OR72")
+seurat$anno1_patient <- factor(seurat$anno1_patient, levels = c(paste0('EC-AC', '-', patients_control),
+                                                                paste0('EC-POU2', '-', patients_uc),
+                                                                paste0('EC-POU1', '-', patients_uc),
+                                                                paste0('EC-PP', '-', patients_uc),
+                                                                paste0('EC-TI', '-', patients_control)))
+```
+
+
+```{r}
+# prepare this because I removed 2 low-quality samples in sample-wise EC 
+seurat.sub <- subset(seurat, anno1_patient!='EC-POU1-OR109' & anno1_patient!='EC-POU2-OR43')
+```
+
+```{r}
+Average.expression.mtx.patients <- AverageExpression(
+  seurat.sub,
+  assays = 'RNA',
+  features = labels,
+  return.seurat = FALSE,
+  group.by = "anno1_patient",
+  add.ident = NULL,
+  slot = "data",
+  verbose = TRUE
+)
+Average.expression.mtx.patients <- Average.expression.mtx.patients$RNA %>% t(.) %>% scale(.) %>% t(.)
+```
+
+```{r, fig.height=12, fig.width=10}
+col.split <- c(
+  rep('EC-AC', 6),
+  rep('EC-POU2', 5),
+  rep('EC-POU1', 5),
+  rep('EC-PP', 6),
+  rep('EC-TI', 6)
+)
+p2 <- Heatmap(Average.expression.mtx.patients, col = rc2_rna_heatmap_colors_gradient1, cluster_columns = T, cluster_rows = T,
+              show_row_dend = F, show_column_dend = F, show_row_names = T,
+        rect_gp = gpar(col = "white", lwd = 0.5), cluster_column_slices = FALSE,
+        border = F, column_gap = unit(3, "mm"),
+        column_split = factor(col.split, levels = c('EC-AC', 'EC-POU2', 'EC-POU1', 'EC-PP', 'EC-TI')),
+        use_raster = F
+        )
+
+pdf(paste0(out.dir, plot.title , '_sample.pdf'), width = 9, height = 10, pointsize = 1)
+print(p2)
+dev.off()
+```
+
+
+

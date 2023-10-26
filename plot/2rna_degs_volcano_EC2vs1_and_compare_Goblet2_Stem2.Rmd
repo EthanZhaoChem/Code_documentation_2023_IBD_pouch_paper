@@ -1,0 +1,100 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(ArchR)
+library(parallel)
+library(BSgenome.Hsapiens.UCSC.hg38)
+source('~/yuzhao1/scripts/plot.R')
+
+```
+
+```{r, include = F, eval=F}
+source('~/yuzhao1/scripts/helper_archr.R')
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('~/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+source('~/yuzhao1/work/manu/rc2/scripts/rna_deg_markers.R')
+```
+
+```{r}
+out.dir <- '~/yuzhao1/work/manu/rc2/plots/2rna_degs_volcano/'
+```
+
+
+```{r}
+plot.title = "all EC2 vs EC1"
+labeled_genes <- c('REG1A', 'DMBT1', 'SPINK1', 'MUC2', 'OLFM4',  'LCN2',
+            'ADH1C', 'SATB2', 'CEACAM7', 'CA2', 'AQP8', 'HES1', 'NXPE4', 'HMGCS2',
+            'RPSA', 'CFTR', 'RPL11', 'CEACAM5', 'SOX9', 'MECOM', 'TFCP2L1', 'CD24','FCGBP',
+            'SLC7A7', 'GSTA1', 'ACE2', 'RBP2', 'APOA4', 'FABP6', 'HLA−DRA','ABCC2', 'ENPEP',
+            'EFNA1', 'SAE1', 'APOA1','APOB', 'SELENOP', 'TRPM6', 
+            'SOX6', 'MECOM', 'BACH1', 'CDX2', 'MAF', 'HNF4G'
+            )
+
+de_results  <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/de_results_EC2vs1_bulk.rds')
+
+
+fclist <- topTable(
+  de_results[["EC"]],
+  coef = "anno1.subEC2",
+  p.value = 1000000,
+  sort.by = 'logFC',
+  number = 30000
+)
+df <- fclist[, c('logFC', 'adj.P.Val')]
+colnames(df) <- c('logFC', 'p_val_adj')
+min_nonzero <- min(subset(df$p_val_adj, df$p_val_adj > 0))
+df$p_val_adj[df$p_val_adj == 0] <- min_nonzero
+colnames(df) <- c('logFC', 'madjp')
+df$madjp <- 0-log10(df$madjp)
+
+# Set significance thresholds
+logFC_threshold <- 1     # Choose a log2 fold change threshold
+madjp_threshold <- -log10(0.05)  # Choose an adjusted p-value threshold
+df$madjp[df$madjp > 300] <- 300
+
+# Create a new variable to color significant points
+df <- df %>%
+  mutate(Significant = ifelse(abs(logFC) > logFC_threshold & madjp > madjp_threshold, "Significant", "Not Significant"))
+
+# Create a new variable for labels
+df$label <- rownames(df) 
+df$label[!df$label %in% labeled_genes] <- ''
+
+p <- ggscatter(df, x = 'logFC', y = 'madjp', color = 'Significant', size = 2) +
+  theme_pubr() +
+  scale_color_manual(values = c("Not Significant" = "#bdbdbd", "Significant" = "#fd8d3c")) +
+  theme(axis.title = element_text(size = 12, face = 'bold'),
+        axis.text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        legend.position = "bottom")+
+  labs(title="TF regulator",
+       x ="Correlation To Gene Expression", y = "Max TF Motif Delta")+
+  geom_text_repel(aes(label=label),
+                  nudge_y = 0, max.overlaps = 1000, min.segment.length = 0.01,
+                  size = 2, force = 1) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  geom_hline(yintercept = madjp_threshold, linetype = "dashed") +
+  geom_vline(xintercept = c(-logFC_threshold, logFC_threshold), linetype = "dashed") +
+  guides(color=guide_legend(title=""))+
+  labs(title = plot.title,
+       x = "Log2 Fold Change",
+       y = "-log10(Adjusted P-value)",
+       color = "Significance") +
+  theme(legend.position = "bottom")
+
+pdf(paste0(out.dir, plot.title, '.pdf'), width = 5, height = 5)
+print(p)
+dev.off()
+```
+

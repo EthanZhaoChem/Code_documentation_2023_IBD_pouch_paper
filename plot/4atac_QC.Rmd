@@ -1,0 +1,539 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('~/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+out.dir <- '/project/gca/yuzhao1/work/manu/rc2/plots/4atac_QC/'
+```
+
+
+```{r, include = F, eval=F}
+proj <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_filtered/")
+proj_epithelial <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_epithelial_filtered2/")
+proj_immune <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_immune_filtered/")
+proj_tcell <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_tcell_filtered2/")
+proj_bcell <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_bcell_filtered/")
+proj_myeloid <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_myeloid_filtered2/")
+proj_others <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_others_filtered2/")
+
+union <- as.data.frame(proj@cellColData)
+epithelial <- as.data.frame(proj_epithelial@cellColData)
+immune <- as.data.frame(proj_immune@cellColData)
+tcell <- as.data.frame(proj_tcell@cellColData)
+bcell <- as.data.frame(proj_bcell@cellColData)
+myeloid <- as.data.frame(proj_myeloid@cellColData)
+others <- as.data.frame(proj_others@cellColData)
+```
+
+###################### 1. cell number ########################
+
+### by patient
+
+```{r}
+seurat <- union
+```
+
+```{r, fig.width=9}
+df <- data.frame(matrix(ncol = 0, nrow = nrow(seurat)))
+df$patient <- seurat$patient
+df$cell_number <- rep(1, nrow(df))
+df2 <- aggregate(cell_number~.,df,FUN=sum)
+ncells <- dim(df)[[1]]
+npatients <- length(unique(seurat$patient))
+
+p1 <- ggplot(df2, aes(x = patient, y = cell_number)) +
+  geom_col(fill = '#1f78b4', alpha = 0.9, width = 0.5) +
+  geom_text(aes(label=cell_number), hjust=0.5, vjust = -0.2, color="black",size=2.7, fontface = 'bold')+
+  theme_classic() +
+  theme(
+    panel.grid.major = element_line(linetype="dashed"),
+    panel.grid.minor = element_line(linetype="dashed"),
+    axis.text.x = element_text(size = 10, face = 'bold', colour = 'black', angle=45, hjust = 1, vjust = 1),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(size = 12, face = 'bold', colour = 'black'),
+    plot.title = element_text(size = 12, face = 'bold', colour = 'black', hjust = 0.5),
+  )+
+  labs(title = paste0("Summary of ", ncells, " cells in ", npatients, " patients"), x = "Patient ID", y = "Cell number")
+```
+
+
+### by sample
+
+```{r, fig.width=12}
+df <- data.frame(matrix(ncol = 0, nrow = nrow(seurat)))
+df$sample <- paste0(seurat$patient,'-',seurat$biopsy_location)
+df$cell_number <- rep(1, nrow(df))
+df2 <- aggregate(cell_number~.,df,FUN=sum)
+ncells <- dim(df)[[1]]
+nsamples <- length(unique(seurat$Sample_corrected))
+npatients <- length(unique(seurat$patient))
+
+p2 <- ggplot(df2, aes(x = sample, y = cell_number)) +
+  geom_col(fill = '#1f78b4', alpha = 0.9, width = 0.5) +
+  geom_text(aes(label=cell_number), hjust=0.5, vjust = -0.2, color="black",size=2.7, fontface = 'bold')+
+  theme_classic() +
+  theme(
+    panel.grid.major = element_line(linetype="dashed"),
+    panel.grid.minor = element_line(linetype="dashed"),
+    axis.text.x = element_text(size = 10, face = 'bold', colour = 'black', angle=45, hjust = 1, vjust = 1),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(size = 12, face = 'bold', colour = 'black'),
+    plot.title = element_text(size = 12, face = 'bold', colour = 'black', hjust = 0.5),
+  )+
+  labs(title = paste0("Summary of ", ncells, " cells in ", nsamples, " samples from ", npatients, " patients"), x = "Sample ID", y = "Cell number")
+```
+
+### by lineage
+
+```{r, fig.width=8}
+df <- data.frame(matrix(ncol = 0, nrow = nrow(seurat)))
+df$lineage <- seurat$lineage
+df$cell_number <- rep(1, nrow(df))
+df2 <- aggregate(cell_number~.,df,FUN=sum)
+df2 <- df2[order(df2$cell_number, decreasing = T),]
+df2$lineage <- factor(df2$lineage, levels = unique(df2$lineage))
+ncells <- dim(df)[[1]]
+nclusters <- length(unique(seurat$lineage))
+
+p3 <- ggplot(df2, aes(x = lineage, y = cell_number)) +
+  geom_col(fill = '#1f78b4', alpha = 0.9, width = 0.5) +
+  geom_text(aes(label=cell_number), hjust=0.5, vjust = -0.2, color="black",size=2.7, fontface = 'bold')+
+  theme_classic() +
+  theme(
+    panel.grid.major = element_line(linetype="dashed"),
+    panel.grid.minor = element_line(linetype="dashed"),
+    # axis.text.x = element_text(size = 10, face = 'bold', colour = 'black', angle = 90, hjust = 1, vjust = 0.5),
+    axis.text.x = element_text(angle=45, hjust = 1, vjust = 1, size = 10, face = 'bold', colour = 'black',),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(size = 12, face = 'bold', colour = 'black'),
+    plot.title = element_text(size = 12, face = 'bold', colour = 'black', hjust = 0.5),
+    plot.margin = margin(1,1,1,1,'cm') 
+  )+
+  labs(title = paste0("Summary of ", ncells, " cells in ", nclusters, " lineage categories"), x = "Cluster", y = "Cell number")
+```
+
+### sample + lineage
+
+```{r, fig.width=13}
+df <- data.frame(matrix(ncol = 0, nrow = nrow(seurat)))
+df$sample <- paste0(seurat$patient,'-',seurat$biopsy_location)
+df$lineage <- seurat$lineage
+df$lineage <- factor(df$lineage, levels = custom_colors_atac_lineage.levels)
+df$cell_number <- rep(1, nrow(df))
+df2 <- aggregate(cell_number~.,df,FUN=sum)
+ncells <- dim(df)[[1]]
+nsamples <- length(unique(seurat$Sample_corrected))
+npatients <- length(unique(seurat$patient))
+
+p4 <- ggplot(df2, aes(x = sample, y = cell_number, fill = lineage)) +
+  geom_col(alpha = 0.9, width = 0.5) +
+  scale_fill_manual(values = custom_colors_atac_lineage)+
+  # geom_text(aes(label=cell_number), hjust=0.5, vjust = -0.2, color="black",size=2.7, fontface = 'bold')+
+  theme_classic() +
+  theme(
+    panel.grid.major = element_line(linetype="dashed"),
+    panel.grid.minor = element_line(linetype="dashed"),
+    # axis.text.x = element_text(size = 10, face = 'bold', colour = 'black', angle = 90, hjust = 1, vjust = 0.5),
+    axis.text.x = element_text(angle=45, hjust = 1, vjust = 1, size = 10, face = 'bold', colour = 'black',),
+    axis.text.y = element_text(face = 'bold', colour = 'black',),
+    axis.ticks = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(size = 12, face = 'bold', colour = 'black'),
+    plot.title = element_blank(),
+    plot.margin = margin(1,1,1,1,'cm') 
+  )+
+  labs(y = "Cell number")
+
+```
+
+
+### location + lineage
+
+```{r, fig.width=13}
+df <- data.frame(matrix(ncol = 0, nrow = nrow(seurat)))
+df$biopsy_location <- paste0(seurat$biopsy_location)
+df$lineage <- seurat$lineage
+df$lineage <- factor(df$lineage, levels = custom_colors_atac_lineage.levels)
+df$cell_number <- rep(1, nrow(df))
+df2 <- aggregate(cell_number~.,df,FUN=sum)
+ncells <- dim(df)[[1]]
+nsamples <- length(unique(seurat$Sample_corrected))
+npatients <- length(unique(seurat$patient))
+
+p5 <- ggplot(df2, aes(x = biopsy_location, y = cell_number, fill = lineage)) +
+  geom_col(alpha = 0.9, width = 0.5) +
+  scale_fill_manual(values = custom_colors_atac_lineage)+
+  # geom_text(aes(label=cell_number), hjust=0.5, vjust = -0.2, color="black",size=2.7, fontface = 'bold')+
+  theme_classic() +
+  theme(
+    panel.grid.major = element_line(linetype="dashed"),
+    panel.grid.minor = element_line(linetype="dashed"),
+    # axis.text.x = element_text(size = 10, face = 'bold', colour = 'black', angle = 90, hjust = 1, vjust = 0.5),
+    axis.text.x = element_text(angle=45, hjust = 1, vjust = 1, size = 10, face = 'bold', colour = 'black',),
+    axis.text.y = element_text(face = 'bold', colour = 'black',),
+    axis.ticks = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(size = 12, face = 'bold', colour = 'black'),
+    plot.title = element_blank(),
+    plot.margin = margin(1,1,1,1,'cm') 
+  )+
+  labs(y = "Cell number")
+
+```
+
+### by cluster
+
+```{r, fig.width=12}
+df <- data.frame(matrix(ncol = 0, nrow = nrow(seurat)))
+df$anno1 <- seurat$anno1
+df$cell_number <- rep(1, nrow(df))
+df2 <- aggregate(cell_number~.,df,FUN=sum)
+df2 <- df2[order(df2$cell_number, decreasing = T),]
+df2$anno1 <- factor(df2$anno1, levels = df2$anno1)
+ncells <- dim(df)[[1]]
+nclusters <- length(unique(seurat$anno1))
+
+p6 <- ggplot(df2, aes(x = anno1, y = cell_number)) +
+  geom_col(fill = '#1f78b4', alpha = 0.9, width = 0.5) +
+  geom_text(aes(label=cell_number), hjust=0.5, vjust = -0.2, color="black",size=1.5, fontface = 'bold')+
+  theme_classic() +
+  theme(
+    panel.grid.major = element_line(linetype="dashed"),
+    panel.grid.minor = element_line(linetype="dashed"),
+    # axis.text.x = element_text(size = 10, face = 'bold', colour = 'black', angle = 90, hjust = 1, vjust = 0.5),
+    axis.text.x = element_text(angle=45, hjust = 1, vjust = 1, size = 7, face = 'bold', colour = 'black',),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(size = 12, face = 'bold', colour = 'black'),
+    plot.title = element_text(size = 12, face = 'bold', colour = 'black', hjust = 0.5),
+    plot.margin = margin(2,2,2,2,'cm') 
+  )+
+  labs(title = paste0("Summary of ", ncells, " cells in ", nclusters, " clusters"), x = "Cluster", y = "Cell number")
+```
+
+### by location
+
+```{r, include=T}
+df1 <- seurat[,c('Sample_corrected', 'patient', 'biopsy_location')]
+df2 <- df1
+df2$Population <- 1
+df3 <- aggregate(formula = Population ~ biopsy_location, data = df2, FUN = sum)
+
+df3$location <- factor(df3$biopsy_location, levels = c('TI', 'AC', 'PP', 'POU'))
+
+p7 <- ggplot(df3, aes(x=biopsy_location, y=Population)) +
+  geom_col(fill = '#1f78b4', alpha = 0.9, width = 0.5) +
+  geom_text(aes(label=Population), hjust=0.5, vjust = -0.2, color="black",size=2.7, fontface = 'bold')+
+  theme_classic() +
+  theme(
+    panel.grid.major = element_line(linetype="dashed"),
+    panel.grid.minor = element_line(linetype="dashed"),
+    # axis.text.x = element_text(size = 10, face = 'bold', colour = 'black', angle = 90, hjust = 1, vjust = 0.5),
+    axis.text.x = element_text(angle=45, hjust = 1, vjust = 1, size = 10, face = 'bold', colour = 'black',),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(size = 12, face = 'bold', colour = 'black'),
+    plot.title = element_text(size = 12, face = 'bold', colour = 'black', hjust = 0.5),
+    plot.margin = margin(1,1,1,1,'cm') 
+  )+
+  labs(title = paste0(""))
+```
+
+```{r}
+
+pdf(paste0(out.dir, 'cell_number.pdf'), width = 9, height = 6, pointsize = 1)
+print(p1)
+print(p2)
+print(p3)
+print(p4)
+print(p5)
+print(p6)
+print(p7)
+dev.off()
+
+```
+
+
+
+###################### 2. Number of reads/UMI/Genes per cell ########################
+
+```{r}
+out.dir <- '~/yuzhao1/work/manu/rc2/plots/4atac_QC/'
+
+genes <- c("TSSEnrichment", "ReadsInTSS", "ReadsInPromoter", "PromoterRatio", 
+           "log10(nFrags)", "DoubletEnrichment", 'NucleosomeRatio')
+```
+
+### all cells
+
+```{r}
+seurat <- union
+seurat$lineage[seurat$anno1 %in% c("Plasma cell")] <- 'plasma cell'
+seurat$lineage <- factor(seurat$lineage, levels = c("epithelial", "tcell", "bcell", "plasma cell", "myeloid", "others"))
+```
+
+```{r}
+df <- seurat
+df["log10(nFrags)"] <- log10(df["nFrags"])
+palette <- custom_colors_atac_lineage
+plots <- list()
+
+for (feature in genes){
+  plots[[feature]] <- 
+    ggviolin(df, x = 'lineage', y = feature, fill = 'lineage', 
+             palette = palette, scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=15),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=20),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=20, hjust=0.5, face = 'bold'))+
+      labs(title = '')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+}
+
+pdf(paste0(out.dir, 'lineage_feature_vln', '.pdf'), width = 5, height = 5)
+print(plots)
+dev.off()
+
+```
+
+
+
+### epithelial
+
+```{r}
+seurat <- epithelial
+seurat$anno1 <- factor(seurat$anno1,
+                       levels = c("Stem", "TA", "EC1-1", "EC1-2", "EC2-1", "EC2-2", "Goblet1",
+                                  "Goblet2", "M-like", "BEST4", "Paneth", "EEC", "Tuft"))
+```
+
+```{r}
+df <- seurat
+df["log10(nFrags)"] <- log10(df["nFrags"])
+palette <- custom_colors_atac_epithelial
+plots <- list()
+
+for (feature in genes){
+  plots[[feature]] <- 
+    ggviolin(df, x = 'anno1', y = feature, fill = 'anno1', 
+             palette = palette, scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=15),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=20),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=20, hjust=0.5, face = 'bold'))+
+      labs(title = '')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+}
+
+pdf(paste0(out.dir, 'epithelial_feature_vln', '.pdf'), width = 7, height = 5)
+print(plots)
+dev.off()
+
+```
+
+
+
+
+
+### tcell
+
+```{r}
+seurat <- tcell
+seurat$anno1 <- factor(seurat$anno1,
+                       levels = c("CD4 Tcm" , "Treg", "CD103- CD4 Trm", "CD103+ CD4 Trm", 
+                                  "CD103+ CD8 Trm", "KLRG1+ CD8 Trm", "gdT", 
+                                  "MAIT", "NK T", "NK", "ILCs" ))
+```
+
+```{r}
+df <- seurat
+df["log10(nFrags)"] <- log10(df["nFrags"])
+palette <- custom_colors_atac_tcell
+plots <- list()
+
+for (feature in genes){
+  plots[[feature]] <- 
+    ggviolin(df, x = 'anno1', y = feature, fill = 'anno1', palette = palette,
+              scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=15),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=20),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=20, hjust=0.5, face = 'bold'))+
+      labs(title = '')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+}
+
+pdf(paste0(out.dir, 'tcell_feature_vln', '.pdf'), width = 6, height = 5)
+print(plots)
+dev.off()
+
+```
+
+
+
+### bcell
+
+```{r}
+seurat <- bcell
+seurat$anno1 <- factor(seurat$anno1,
+                       levels = c("GC B", "Naive B", "Memory B", "Plasma cell"))
+```
+
+```{r}
+df <- seurat
+df["log10(nFrags)"] <- log10(df["nFrags"])
+palette <- custom_colors_atac_bcell
+plots <- list()
+
+for (feature in genes){
+  plots[[feature]] <- 
+    ggviolin(df, x = 'anno1', y = feature, fill = 'anno1', palette = palette,
+              scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=15),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=20),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=20, hjust=0.5, face = 'bold'))+
+      labs(title = '')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+}
+
+pdf(paste0(out.dir, 'bcell_feature_vln', '.pdf'), width = 6, height = 5)
+print(plots)
+dev.off()
+
+```
+
+
+
+### myeloid
+
+```{r}
+seurat <- myeloid
+seurat$anno1 <- factor(seurat$anno1,
+                       levels = c("Monocyte", "Macrophage", "DC", "Lymphoid DC", "Mast", "Neutrophil"))
+```
+
+```{r}
+df <- seurat
+df["log10(nFrags)"] <- log10(df["nFrags"])
+palette <- custom_colors_atac_myeloid
+plots <- list()
+
+for (feature in genes){
+  plots[[feature]] <- 
+    ggviolin(df, x = 'anno1', y = feature, fill = 'anno1', palette = palette,
+              scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=15),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=20),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=20, hjust=0.5, face = 'bold'))+
+      labs(title = '')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+}
+
+pdf(paste0(out.dir, 'myeloid_feature_vln', '.pdf'), width = 6, height = 5)
+print(plots)
+dev.off()
+
+```
+
+
+
+### others
+
+```{r}
+seurat <- others
+seurat$anno1 <- factor(seurat$anno1,
+                       levels = c("Stromal-1", "Stromal-2", "Stromal-3", "Myofibroblast", "Arterial", "Venous", "Pericyte", 
+                                  "Contractile pericyte" , "Smooth muscle", "Lymphatic endothelium" , "Glial" ))
+```
+
+```{r}
+df <- seurat
+df["log10(nFrags)"] <- log10(df["nFrags"])
+palette <- custom_colors_atac_others
+plots <- list()
+
+for (feature in genes){
+  plots[[feature]] <- 
+    ggviolin(df, x = 'anno1', y = feature, fill = 'anno1', palette = palette,
+              scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=15),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=20),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=20, hjust=0.5, face = 'bold'))+
+      labs(title = '')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+}
+
+pdf(paste0(out.dir, 'others_feature_vln', '.pdf'), width = 7, height = 5)
+print(plots)
+dev.off()
+
+```
+
+
+
+
+
+
+

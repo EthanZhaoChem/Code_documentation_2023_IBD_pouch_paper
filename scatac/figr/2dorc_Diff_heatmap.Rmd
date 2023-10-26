@@ -1,0 +1,198 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(limma)
+library(edgeR)
+library(ArchR)
+library(variancePartition)
+library(BiocParallel)
+# library(tidyverse)
+library(ComplexHeatmap)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_deg_markers.R')
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+source('/project/gca/yuzhao1/scripts/seurat/deg_pseudobulk.R')
+```
+
+```{r}
+proj <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_epithelial_filtered2_EC/")
+out.dir <- '~/yuzhao1/work/final_RC2atac/figr/rds/'
+```
+
+```{r, include = F, eval=F}
+# add dorc assay to the paired rna seurat subset
+seurat_rna <- readRDS(paste0(proj@projectMetadata$outputDirectory, '/seurat_rna_normalized_GIM.rds'))
+RNAmat.paired <- seurat_rna@assays$RNA@data[, proj$cellNames]
+dorcMat <- readRDS(paste0(out.dir, 'dorcMat.rds'))
+dorcMat <- dorcMat[, proj$cellNames]
+
+# add updated centered dorc counts to seurat "DORC" assay
+seurat_rna[["DORC"]] <- CreateAssayObject(data = dorcMat)
+DefaultAssay(seurat_rna) <- "DORC"
+```
+
+```{r}
+EC.markers1 <- FindMarkers(seurat_rna, ident.1 = 'EC-AC', ident.2 = c("EC-TI"), group.by = 'anno1.loc', logfc.threshold=0.5)
+EC.markers2 <- FindMarkers(seurat_rna, ident.1 = 'EC-POU2', ident.2 = c("EC-PP"), group.by = 'anno1.loc', logfc.threshold=0.5)
+```
+
+
+```{r}
+# dense heatmap for EC only
+# all DEGs
+genes <- unique(c(rownames(EC.markers1), rownames(EC.markers2)))
+# manually filtered DEGs
+human_tfs <- read.table('~/yuzhao1/resource/scenic/utoronto_human_tfs_v_1.01.txt', header = F)[[1]]
+genes.show <- intersect(genes, human_tfs)
+plot.title <- 'DORC_score_heatmap'
+plot.height <- 10
+```
+
+```{r}
+seurat <- seurat_rna
+seurat$anno1 <- seurat$anno1_loc
+seurat$anno1 <- factor(seurat$anno1, levels = c('EC-AC', 'EC-POU2', 'EC-POU1', 'EC-PP', 'EC-TI'))
+```
+
+
+```{r}
+seurat$Patient_ID <- seurat$patient
+seurat$anno1_patient <- paste0(seurat$anno1, '-', seurat$Patient_ID)
+patients_control <- grep('HA', unique(seurat$Patient_ID), value = T)
+patients_uc <- c("OR109",  "OR48",  "OR102", "OR101", "OR43",  "OR72")
+seurat$anno1_patient <- factor(seurat$anno1_patient, levels = c(paste0('EC-AC', '-', patients_control),
+                                                                paste0('EC-POU2', '-', patients_uc),
+                                                                paste0('EC-POU1', '-', patients_uc),
+                                                                paste0('EC-PP', '-', patients_uc),
+                                                                paste0('EC-TI', '-', patients_control)))
+```
+
+
+```{r}
+# use counts slot to avoid exponential calculation of data slot
+seurat@assays$DORC@counts <- seurat@assays$DORC@data
+Average.expression.mtx <- AverageExpression(
+  seurat,
+  assays = 'DORC',
+  features = genes,
+  return.seurat = FALSE,
+  group.by = "anno1",
+  add.ident = NULL,
+  slot = "counts",
+  verbose = TRUE
+)
+Average.expression.mtx <- Average.expression.mtx$DORC %>% t(.) %>% scale(.) %>% t(.)
+```
+
+
+```{r, fig.height=15, fig.width=4}
+library(ComplexHeatmap)
+#group = kmeans((Average.expression.mtx), centers = 6)$cluster
+
+# this scalinf process is only used to identify dendrogram
+df <- Average.expression.mtx
+df <- scale(df)
+d <- dist(df, method = "euclidean")
+hc1 <- hclust(d, method = "complete" )
+group <- cutree(hc1, k = 5)
+
+# filter again to show in labels of heatmap
+labels <- genes.show
+# labels <- genes.show
+labels.idx <- match(labels, rownames(Average.expression.mtx))
+
+pdf(paste0(out.dir, plot.title , '_location.pdf'), width = 5, height = 6)
+p1 <- Heatmap(Average.expression.mtx, col = rc2_rna_heatmap_colors_gradient1, cluster_columns = F, 
+              cluster_rows = cluster_within_group( t(Average.expression.mtx), group),
+              show_row_dend = F, show_column_dend = F, show_row_names = F,
+              heatmap_legend_param = list(title = "Mean DORC z score"),
+              use_raster = F)+
+  rowAnnotation(link = anno_mark(at = labels.idx, labels = labels, labels_gp = gpar(col = "black", fontsize = 6)), 
+                width = unit(0.1, "cm") + 
+                max_text_width(labels))
+
+print(p1)
+dev.off()
+```
+
+```{r}
+# prepare this because I removed 2 low-quality samples in sample-wise EC 
+seurat.sub <- subset(seurat, anno1_patient!='EC-POU1-OR109' & anno1_patient!='EC-POU2-OR43')
+```
+
+```{r}
+seurat.sub@assays$DORC@counts <- seurat.sub@assays$DORC@data
+
+Average.expression.mtx.patients <- AverageExpression(
+  seurat.sub,
+  assays = 'DORC',
+  features = labels,
+  return.seurat = FALSE,
+  group.by = "anno1_patient",
+  add.ident = NULL,
+  slot = "counts",
+  verbose = TRUE
+)
+Average.expression.mtx.patients <- Average.expression.mtx.patients$DORC %>% t(.) %>% scale(.) %>% t(.)
+```
+
+```{r, fig.height=12, fig.width=10}
+col.split <- c(
+  rep('EC-AC', 6),
+  rep('EC-POU2', 5),
+  rep('EC-POU1', 5),
+  rep('EC-PP', 6),
+  rep('EC-TI', 6)
+)
+p2 <- Heatmap(Average.expression.mtx.patients, col = rc2_rna_heatmap_colors_gradient1, cluster_columns = T, cluster_rows = T,
+              show_row_dend = F, show_column_dend = F, show_row_names = T,
+        rect_gp = gpar(col = "white", lwd = 0.5), cluster_column_slices = FALSE,
+        border = F, column_gap = unit(3, "mm"),
+        column_split = factor(col.split, levels = c('EC-AC', 'EC-POU2', 'EC-POU1', 'EC-PP', 'EC-TI')),
+        use_raster = F
+        )
+
+pdf(paste0(out.dir, plot.title , '_sample.pdf'), width = 9, height = 10, pointsize = 1)
+print(p2)
+dev.off()
+```
+
+```{r}
+library(optmatch)
+library(Matrix)
+library(FNN)
+library(dplyr)
+library(igraph)
+library(pracma)
+library(uwot) 
+library(FigR)
+library(foreach)
+# visually_filtered_ec_degs <- unique(c(rna_deg_markers_ec_ileum, rna_deg_markers_ec_colon))
+dorcGenes <- readRDS(paste0(out.dir, 'dorcGenes.rds'))
+ec_degs <- readRDS('~/yuzhao1/work/manu/rc2/plots/2rna_deg/EC_heatmap/genesEC.rds')
+figR.d <- readRDS(paste0(out.dir, 'figR.d.rds'))
+dorc.subset <- intersect(dorcGenes, ec_degs)
+png(paste0(out.dir, 'figR_network_intersectDORC_ECdegRNA.png'),res = 300, height = 6000, width = 3000)
+plotfigRNetwork(figR.d = figR.d %>% subset(., DORC %in% dorc.subset),
+                score.cut = 2,
+                TFs = NULL,
+                weight.edges = TRUE)
+dev.off()
+
+```
+

@@ -1,0 +1,203 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(ArchR)
+library(parallel)
+library(BSgenome.Hsapiens.UCSC.hg38)
+source('~/yuzhao1/scripts/plot.R')
+
+```
+
+```{r, include = F, eval=F}
+source('~/yuzhao1/scripts/helper_archr.R')
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('~/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+source('~/yuzhao1/work/manu/rc2/scripts/rna_deg_markers.R')
+```
+
+```{r}
+out.dir <- '~/yuzhao1/work/manu/rc2/plots/2rna_degs_decomposition/'
+genes <- list()
+```
+
+```{r}
+# Set significance thresholds
+logFC_threshold <- 1     # Choose a log2 fold change threshold
+madjp_threshold <- -log10(0.05)  # Choose an adjusted p-value threshold
+de_results  <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/de_results_EC2vs1_bulk.rds')
+
+
+fclist <- topTable(
+  de_results[["EC"]],
+  coef = "anno1.subEC2",
+  p.value = 1000000,
+  sort.by = 'logFC',
+  number = 30000
+)
+df <- fclist[, c('logFC', 'adj.P.Val')]
+colnames(df) <- c('logFC', 'p_val_adj')
+min_nonzero <- min(subset(df$p_val_adj, df$p_val_adj > 0))
+df$p_val_adj[df$p_val_adj == 0] <- min_nonzero
+colnames(df) <- c('logFC', 'madjp')
+df$madjp <- 0-log10(df$madjp)
+
+genes[['EC 1vs2']] <- rownames(df)[df$logFC < -logFC_threshold & df$madjp > madjp_threshold]
+genes[['EC 2vs1']] <- rownames(df)[df$logFC > logFC_threshold & df$madjp > madjp_threshold]
+```
+
+
+```{r}
+# Set significance thresholds
+logFC_threshold <- 1     # Choose a log2 fold change threshold
+madjp_threshold <- -log10(0.05)  # Choose an adjusted p-value threshold
+de_results  <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/goblet/de_results_Goblet2vs1_bulk.rds')
+
+fclist <- topTable(
+  de_results[["Goblet"]],
+  coef = "anno1.subGoblet2",
+  p.value = 1000000,
+  sort.by = 'logFC',
+  number = 30000
+)
+df <- fclist[, c('logFC', 'adj.P.Val')]
+colnames(df) <- c('logFC', 'p_val_adj')
+min_nonzero <- min(subset(df$p_val_adj, df$p_val_adj > 0))
+df$p_val_adj[df$p_val_adj == 0] <- min_nonzero
+colnames(df) <- c('logFC', 'madjp')
+df$madjp <- 0-log10(df$madjp)
+
+genes[['Goblet 1vs2']] <- rownames(df)[df$logFC < -logFC_threshold & df$madjp > madjp_threshold]
+genes[['Goblet 2vs1']] <- rownames(df)[df$logFC > logFC_threshold & df$madjp > madjp_threshold]
+```
+
+
+```{r}
+# Set significance thresholds
+logFC_threshold <- 1     # Choose a log2 fold change threshold
+madjp_threshold <- -log10(0.05)  # Choose an adjusted p-value threshold
+de_results  <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/stem/de_results_Stem2vs1_bulk.rds')
+
+
+fclist <- topTable(
+  de_results[["Stem"]],
+  coef = "anno1.subStem2",
+  p.value = 1000000,
+  sort.by = 'logFC',
+  number = 30000
+)
+df <- fclist[, c('logFC', 'adj.P.Val')]
+colnames(df) <- c('logFC', 'p_val_adj')
+min_nonzero <- min(subset(df$p_val_adj, df$p_val_adj > 0))
+df$p_val_adj[df$p_val_adj == 0] <- min_nonzero
+colnames(df) <- c('logFC', 'madjp')
+df$madjp <- 0-log10(df$madjp)
+
+genes[['Stem 1vs2']] <- rownames(df)[df$logFC < -logFC_threshold & df$madjp > madjp_threshold]
+genes[['Stem 2vs1']] <- rownames(df)[df$logFC > logFC_threshold & df$madjp > madjp_threshold]
+```
+
+
+
+```{r}
+set_order <- c('EC 1vs2', 'Goblet 1vs2', 'Stem 1vs2', 'EC 2vs1','Goblet 2vs1','Stem 2vs1')
+
+
+m1 = make_comb_mat(genes[set_order], mode = "intersect")
+
+# m2 <- m1[comb_degree(m1)%in%c(2,3) & comb_size(m1) >= 100]
+m2 <- m1[comb_degree(m1)%in%c(2,3)]
+
+m2 <- m2[c(1, 8, 9, 12, 7, 17, 18, 19)]
+ss <- set_size(m2)
+cs <- comb_size(m2)
+
+```
+
+
+```{r}
+pdf(paste0(out.dir, 'EC_goblet_stem', '.pdf'), width = 6, height = 4, pointsize = 1)
+
+# set colors for top bars
+combo_colors <- c("#80b1d3",  "#80b1d3","#80b1d3", "#80b1d3", 
+                  "#8dd3c7","#8dd3c7", "#8dd3c7", "#8dd3c7")
+row_colors <- c("#80b1d3", "#80b1d3", "#80b1d3",
+                "#8dd3c7", "#8dd3c7", "#8dd3c7")
+rownames_gp <- gpar(fontsize = 10, fontface = "bold", col = "blue")
+
+ht <- UpSet(
+  m2,
+  set_order = set_order,
+  comb_col = combo_colors,
+  top_annotation = HeatmapAnnotation(
+    "# Shared DEGs" = anno_barplot(
+      cs,
+      axis = T,
+      axis_param = list(gp = gpar(fontsize =
+                                    10)),
+      ylim = c(0, max(cs) * 1.1),
+      border = FALSE,
+      gp = gpar(fill = combo_colors),
+      height = unit(4, "cm")
+    ),
+    annotation_name_side = "left",
+    annotation_name_rot = 90,
+    annotation_name_gp = gpar(fontsize = 12)
+  ),
+  
+  right_annotation =  rowAnnotation(
+    "DEGs per contrast" = anno_barplot(
+      ss,
+      baseline = 0,
+      axis = T,
+      axis_param = list(
+        gp = gpar(fontsize = 10),
+        at = c(0, 500, 1000, 1500, 2000),
+        labels = c(0, 500, 1000, 1500, 2000),
+        labels_rot = 45
+      ),
+      border = FALSE,
+      extend = 0.5,
+      gp = gpar(fill = row_colors),
+      width = unit(6, "cm")
+    ),
+  annotation_name_gp = gpar(fontsize = 12)
+))
+
+ht = draw(ht)
+od = column_order(ht)
+rod = row_order(ht)
+decorate_annotation(
+  "# Shared DEGs", {
+    grid.text(cs[od], x = seq_along(cs), y = unit(cs[od], "native") + unit(2, "pt"),
+              default.units = "native", just = c("center", "bottom"),
+              gp = gpar(fontsize = 10, col = "black", lwd=3), rot = 0)})
+
+decorate_annotation(
+  "DEGs per contrast", {
+    grid.text(ss[rod], y = seq_along(ss) %>% rev(), x = unit(ss[rod], "native") + unit(1, "cm"),
+              default.units = "native", just = c("right", "center"),
+              gp = gpar(fontsize = 10, col = "black", lwd=3), rot = 0)})
+
+dev.off()
+```
+
+
+
+
+
+
+
+
+
+

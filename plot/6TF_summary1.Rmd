@@ -1,0 +1,408 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(ArchR)
+library(parallel)
+library(BSgenome.Hsapiens.UCSC.hg38)
+library(ComplexHeatmap)
+
+source('~/yuzhao1/scripts/plot.R')
+source('~/yuzhao1/work/manu/rc2/scripts/helper_seurat.R')
+```
+
+```{r, include = F, eval=F}
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('~/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+source('~/yuzhao1/work/manu/rc2/scripts/rna_deg_markers.R')
+source('~/yuzhao1/scripts/helper_archr.R')
+source('~/yuzhao1/work/manu/rc2/scripts/tfs.R')
+```
+
+```{r, include = F, eval=F}
+proj <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_epithelial_filtered2")
+
+df_customized_enrichment <- readRDS("/project/gca/yuzhao1/work/final_RC2atac/peaks/customized_enrichment/EC_allPossible_enrichments.rds")
+df_tfs_enrichedContrasts <- readRDS(paste0('/project/gca/yuzhao1/work/final_RC2atac/peaks/7motif_finalization/', 'df_finalized_enriched_motifs.rds'))
+union <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/gut_filtered.rds')
+seurat <- subset(union, cells = Cells(union)[union$anno1 %in% c('EC1-1', 'EC1-2', "EC2-1", "EC2-2")])
+seurat$anno1_loc <- factor(seurat$anno1_loc, levels = c('EC-AC', 'EC-POU2', 'EC-POU1', 'EC-PP', 'EC-TI'))
+tfs_chromvar <- readRDS('~/yuzhao1/work/manu/rc2/plots/6tf_chromVAR/TF_chromVAR_scaledZscore_EC.rds')
+rownames(tfs_chromvar) <- rownames(tfs_chromvar) %>% strsplit(split = '_', fixed=T) %>% sapply(.,`[[`,1) 
+cisbp_naming <- readRDS('~/yuzhao1/work/manu/rc2/plots/6tf_chromVAR/cisbp_naming.rds') # this score is obtained from EC
+out.dir <- '~/yuzhao1/work/manu/rc2/plots/6TF_summary1/'
+```
+
+```{r}
+tf_genes <- tf_genes_refined
+
+tf_genes <- c(tf_genes_refined,tf_genes_negative)
+out.dir <- '~/yuzhao1/work/manu/rc2/plots/6TF_summary1/'
+
+palette <- custom_colors_location
+```
+
+
+### 1. expression vln plot 
+
+```{r}
+plot.title <- 'tf_vln'
+addinfo <- FetchData(seurat, tf_genes)
+df <- bind_cols(seurat@meta.data, addinfo)
+
+plots <- list()
+for (feature in tf_genes){
+  plots[[feature]] <- 
+    ggviolin(df, x = 'anno1_loc', y = feature, fill = 'biopsy_location', 
+             palette = palette, scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=15),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=20),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=20, hjust=0.5, face = 'bold'))+
+      labs(title = '')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+}
+
+pdf(paste0(out.dir, plot.title, '.pdf'), width = 7, height = 5)
+print(plots)
+dev.off()
+```
+
+### 2.1 expression heatmap
+
+```{r}
+Average.expression.mtx <- AverageExpression(
+  seurat,
+  assays = 'RNA',
+  features = tf_genes,
+  return.seurat = FALSE,
+  group.by = "anno1_loc",
+  add.ident = NULL,
+  slot = "data",
+  verbose = TRUE
+)
+Average.expression.mtx <- Average.expression.mtx$RNA %>% t(.) %>% scale(.) %>% t(.)
+```
+
+
+```{r, fig.height=15, fig.width=4}
+plot.title <- 'tf_heatmap_expression'
+
+pdf(paste0(out.dir, plot.title , '_location.pdf'), width = 5, height = 8)
+p1 <- Heatmap(Average.expression.mtx, col = rc2_rna_heatmap_colors_gradient1, cluster_columns = F, 
+              cluster_rows = T,
+              show_row_dend = F, show_column_dend = F, show_row_names = T,
+              heatmap_legend_param = list(title = "Mean expression z score"),
+              use_raster = F)
+print(p1)
+dev.off()
+```
+
+### 2.2 expression stacked vln
+
+```{r}
+plot.title <- 'tf_stackedVln_expression'
+pdf(paste0(out.dir, plot.title , '_stacked_vln_20231005.pdf'), width = 4, height = 8) # positive
+# pdf(paste0(out.dir, plot.title , '_stacked_vln_20231005.pdf'), width = 5, height = 4) # negative
+VlnPlot(seurat, rev(tf_genes_refined), stack = TRUE, sort = F, flip = TRUE, group.by = 'anno1_loc', 
+        cols = c('#8dd3c7','#ffffb3','#bebada','#fb8072','#80b1d3','#fdb462','#b3de69','#fccde5','#d9d9d9','#bc80bd','#ccebc5','#ffed6f',
+                 '#8dd3c7','#ffffb3','#bebada','#fb8072','#80b1d3','#fdb462','#b3de69','#fccde5','#d9d9d9','#bc80bd','#ccebc5','#ffed6f',
+                 '#8dd3c7','#ffffb3','#bebada','#fb8072','#80b1d3','#fdb462','#b3de69','#fccde5','#d9d9d9','#bc80bd','#ccebc5','#ffed6f')) +
+        theme(legend.position = "none") + ggtitle("Identity on x-axis") +
+  theme_pubr()+
+  theme(axis.text.x = element_text(color = "black", face = "bold", size = 10,),
+        axis.text.y = element_text(color = "black", size = 10, face = "bold"),
+        axis.title.y = element_blank(),
+        axis.title.x = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),        
+        legend.position = "none",
+        panel.background = element_rect(fill = "white",
+                                        colour = "black",
+                                        size = 0.5, linetype = "solid"),
+        strip.background =element_rect(colour = '#1f78b4', fill = '#d8daeb'),
+        strip.text = element_text(colour = 'black', face = 'bold'),
+        plot.title = element_text(hjust = 0.5)
+  )+
+  labs(title = 'Normalized TF expression', y = '')
+dev.off()
+```
+
+
+### 3. chromvar heatmap
+
+```{r, fig.height=15, fig.width=4}
+tfs_chromvar_sub <- tfs_chromvar[tf_genes,]
+# pdf(paste0(out.dir, 'TF_chromvar_heatmap.pdf'), width = 5, height = 7) #positive
+pdf(paste0(out.dir, 'TF_chromvar_heatmap.pdf'), width = 5, height = 3.5) #negative
+p1 <- Heatmap(tfs_chromvar_sub, 
+              col = rc2_rna_heatmap_colors_gradient1,
+              cluster_columns = F, cluster_rows = F,
+              show_row_dend = F, show_column_dend = F, show_row_names = T,
+              heatmap_legend_param = list(title = "Mean chromvar z score"),
+              use_raster = F)
+
+print(p1)
+dev.off()
+```
+
+```{r, fig.height=15, fig.width=4}
+tfs_chromvar_sub <- tfs_chromvar[tf_genes,]
+pdf(paste0(out.dir, 'TF_chromvar_heatmap_t.pdf'), width = 9, height = 3)
+p1 <- Heatmap(t(tfs_chromvar_sub), 
+              col = rc2_rna_heatmap_colors_gradient1,
+              cluster_columns = F, cluster_rows = F,
+              show_row_dend = F, show_column_dend = F, show_row_names = T,
+              heatmap_legend_param = list(title = "Mean chromvar z score"),
+              use_raster = F)
+
+print(p1)
+dev.off()
+```
+
+### 4. selected logos (see 6TF_logo)
+
+### 5. chromVAR score distribution in epithelial umap
+
+```{r}
+# make sure the order of cells are same with proj
+cisbp.mtx.z.imputed <- readRDS('~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_epithelial_filtered2/ChromVAR_cisbp.mtx.z.imputed.rds')
+idx <- match(proj$cellNames, colnames(cisbp.mtx.z.imputed))
+cisbp.mtx.z.imputed <- cisbp.mtx.z.imputed[,idx]
+```
+
+```{r}
+for (tf.plot in tf_genes_refined){
+  tf_cleanname <- tf.plot
+  tf.plot <- mapvalues(tf.plot, from = cisbp_naming$TF, cisbp_naming$TF_full, warn_missing = F)
+  
+  df <- data.frame(proj@cellColData)
+  df$embedding1 <- proj@embeddings$Harmony_UMAP$df$`Harmony#UMAP_Dimension_1`
+  df$embedding2 <- proj@embeddings$Harmony_UMAP$df$`Harmony#UMAP_Dimension_2`
+  df$feature_to_plot <- cisbp.mtx.z.imputed[tf.plot, ]
+  # df$feature_to_plot[df$feature_to_plot < quantile(df$feature_to_plot, 0.01)] <- quantile(df$feature_to_plot, 0.01)
+  # df$feature_to_plot[df$feature_to_plot > quantile(df$feature_to_plot, 0.99)] <- quantile(df$feature_to_plot, 0.99)
+  p <- plot_df_umap_custom(df, plot_feature = T, cap1 = 0.01, cap2 = 0.99, feature_title = tf_cleanname)
+  
+  pdf(paste0('~/yuzhao1/work/manu/rc2/plots/6TF_summary1/chromVAR_umap/', tf.plot, '.pdf'),
+      width = 5, height = 6, pointsize = 1)
+  print(p)
+  dev.off()
+}
+
+
+for (tf.plot in tf_genes){
+  tf_cleanname <- tf.plot
+  tf.plot <- mapvalues(tf.plot, from = cisbp_naming$TF, cisbp_naming$TF_full, warn_missing = F)
+  
+  df <- data.frame(proj@cellColData)
+  df$embedding1 <- proj@embeddings$Harmony_UMAP$df$`Harmony#UMAP_Dimension_1`
+  df$embedding2 <- proj@embeddings$Harmony_UMAP$df$`Harmony#UMAP_Dimension_2`
+  df$feature_to_plot <- cisbp.mtx.z.imputed[tf.plot, ]
+
+  p <-
+    plot_df_umap_custom(
+      df,
+      plot_feature = T,
+      cap1 = 0.01,
+      cap2 = 0.99,
+      feature_title = tf_cleanname
+    ) +
+    facet_wrap( ~ biopsy_location, nrow = 2) +
+    theme(
+      strip.background = element_rect(fill = "white", colour = "white"),
+      strip.text = element_text(size = 12)
+    )
+    
+  
+  pdf(paste0('~/yuzhao1/work/manu/rc2/plots/6TF_summary1/chromVAR_umap_splited/', tf.plot, '.pdf'),
+      width = 10, height = 11, pointsize = 1)
+  print(p)
+  dev.off()
+}
+
+
+
+```
+
+
+```{r}
+tf.plot <- mapvalues(tf_genes, from = cisbp_naming$TF, cisbp_naming$TF_full, warn_missing = F)
+tf_genes_z_name <- paste0('z:', tf.plot)
+p <- plotEmbedding(
+    ArchRProj = proj, 
+    colorBy = "cisbp", 
+    name = tf_genes_z_name, 
+    embedding = "Harmony_UMAP",
+    pal = paletteContinuous("solarExtra"),
+    imputeWeights = getImputeWeights(proj)
+)
+
+pdf(paste0(out.dir, 'TFchromVAR_all', '.pdf'), width = 5, height = 6, pointsize = 1)
+print(p)
+dev.off()
+
+p2 <- lapply(p, function(x){
+    x + guides(color = FALSE, fill = FALSE) + 
+    theme_ArchR(baseSize = 6.5) +
+    theme(plot.margin = unit(c(1, 1, 1, 1), "cm")) +
+    theme(
+        axis.text.x=element_blank(), 
+        axis.ticks.x=element_blank(), 
+        axis.text.y=element_blank(), 
+        axis.ticks.y=element_blank()
+    )
+})
+
+pdf(paste0(out.dir, 'TFchromVAR_all_combined', '.pdf'), width = 12, height = 15, pointsize = 1)
+do.call(cowplot::plot_grid, c(list(ncol = 4),p2))
+dev.off()
+```
+
+
+
+### 6. enrichent black and white plot
+
+
+```{r}
+df <- df_tfs_enrichedContrasts
+rownames(df) <- df$tf
+df$tf_full <- NULL
+df$tf <- NULL
+df <- df[tf_genes, ]
+df <- t(df)
+df <- df[c('colon_core', 'EC_ACvsTI', 'EC_POU2vsPP', 'EC_POU2vsPOU1', 'EC_ACvsPOU2', 
+           'ileum_core', 'EC_TIvsAC', 'EC_PPvsPOU2', 'EC_POU1vsPOU2', 'EC_POU2vsAC'), ]
+
+
+for (i in 1:nrow(df)) {
+  for(j in 1:ncol(df)){
+    df[i,j] <- ifelse(df[i,j]>100, 100, df[i,j])
+  }
+}
+
+# apply a function to each row to scale it to a range of 0 to 100
+scaled_0_to_100 <- sapply(1:nrow(df), function(i) {
+  rescaled_row <- (df[i,] - min(df[i,])) / (max(df[i,]) - min(df[i,])) * 100
+  return(rescaled_row)
+})
+
+scaled_df_0_to_100 <- data.frame(t(scaled_0_to_100))
+rownames(scaled_df_0_to_100) <- rownames(df)
+
+
+
+pal <- c('#fcfbfd','#efedf5','#bcbddc','#9e9ac8','#807dba','#6a51a3','#54278f','#3f007d')
+col_fun <- colorRamp2(seq(0, 100, 100/(length(pal)-1)), pal)
+pdf(paste0(out.dir, 'TF_enrichement_mlog10Padj.pdf'), width = 8.5, height =3)
+p1 <- Heatmap(scaled_df_0_to_100, 
+              col = col_fun,
+              
+              row_names_gp = gpar(fontsize = 8),
+              column_names_gp = gpar(fontsize = 8),
+              
+              # column_split = factor(c(rep('Enriched in TI', 16), c(rep('Enriched in AC', 15))),
+              #                    levels = c('Enriched in TI', 'Enriched in AC')),
+              column_gap = unit(12, "mm"), 
+              border = T,
+              rect_gp = gpar(col = "white", lwd = 1), 
+
+              
+              cluster_columns = T, cluster_rows = F,
+              show_row_dend = F, show_column_dend = F, 
+              show_column_names = T,
+              show_row_names = T,
+              heatmap_legend_param = list(title = "enrichment: -log10(adjusted p value)"),
+              use_raster = F)
+
+print(p1)
+dev.off()
+
+pdf(paste0(out.dir, 'TF_enrichement_mlog10Padj_t.pdf'), width = 5.5, height =6)
+p1 <- Heatmap(t(scaled_df_0_to_100), 
+              col = col_fun,
+              
+              row_names_gp = gpar(fontsize = 8),
+              column_names_gp = gpar(fontsize = 8),
+              
+              # column_split = factor(c(rep('Enriched in TI', 16), c(rep('Enriched in AC', 15))),
+              #                    levels = c('Enriched in TI', 'Enriched in AC')),
+              column_gap = unit(12, "mm"), 
+              border = T,
+              rect_gp = gpar(col = "white", lwd = 1), 
+
+              
+              cluster_columns = F, cluster_rows = T,
+              show_row_dend = F, show_column_dend = F, 
+              show_column_names = T,
+              show_row_names = T,
+              heatmap_legend_param = list(title = "enrichment: -log10(adjusted p value)"),
+              use_raster = F)
+
+print(p1)
+dev.off()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

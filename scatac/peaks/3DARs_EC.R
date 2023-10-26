@@ -1,0 +1,599 @@
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(stringr)
+library(ArchR)
+library(Seurat)
+library(parallel)
+library(BSgenome.Hsapiens.UCSC.hg38)
+
+source('~/yuzhao1/scripts/helper_archr.R')
+source('~/yuzhao1/scripts/plot.R')
+source('~/yuzhao1/work/manu/rc2/scripts/rna_deg_markers.R')
+addArchRThreads(4)
+# our.dir <- '~/yuzhao1/work/manu/rc2/plots/4atac_MarkerPeaks/'
+
+# # read files
+proj_epithelial <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_epithelial_filtered2/")
+
+DARs <- list()
+DARs_significant <- list()
+motif_stats <- list()
+
+DARs <- readRDS('~/yuzhao1/work/final_RC2atac/peaks/3DARs/DARs_EC.rds')
+DARs_significant <- readRDS('~/yuzhao1/work/final_RC2atac/peaks/3DARs/DARs_significant_EC.rds')
+motif_stats <- readRDS('~/yuzhao1/work/final_RC2atac/peaks/3DARs/motif_stats_EC.rds')
+
+############################ 0. EC: EC2vsEC1 ###############################
+temp_lineage <- 'epithelial'
+proj <- paste0('proj_', temp_lineage) %>% as.name(.) %>% eval(.)
+
+proj$test <- proj$anno1
+proj$test[proj$anno1 %in% c('EC1-1', 'EC1-2')] <- 'EC1'
+proj$test[proj$anno1 %in% c('EC2-1', 'EC2-2')] <- 'EC2'
+
+contrast_name <- 'EC2vsEC1'
+group.1 <- "EC2"
+group.2 <- "EC1"
+annotation_group <- "test"
+cutoff_FDR <- 0.01 # cutoff is for peak selection, cutoffs for motifs are specificied in the text
+cutoff_Log2FC <- 1
+
+# calculation
+DARs[[contrast_name]] <- getMarkerFeatures(
+  ArchRProj = proj, 
+  useMatrix = "PeakMatrix",
+  groupBy = annotation_group,
+  normBy = 'ReadsInTSS',
+  maxCells = 20000,
+  testMethod = "wilcoxon",
+  bias = c("TSSEnrichment", "log10(nFrags)"),
+  useGroups = group.1,
+  bgdGroups = group.2
+)
+
+# clean up data
+df_stat <- archr_helper_markerPeaks_converter(DARs[[contrast_name]])
+archr_peakset_Loc <- paste0(paste0(as.character(seqnames(proj@peakSet)), ':',
+                                   start(proj@peakSet),'-',end(proj@peakSet)))
+idx_matched <- match(rownames(df_stat), archr_peakset_Loc)
+peaks_info <- as.data.frame(proj@peakSet[idx_matched], row.names = NULL)
+df_stat <- bind_cols(df_stat, peaks_info)
+
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & abs(df_stat$Log2FC) > cutoff_Log2FC), ]
+DARs_significant[[contrast_name]] <- df_stat_significant
+
+# motifs up
+motifsUp <- peakAnnoEnrichment(
+  seMarker = DARs[[contrast_name]],
+  ArchRProj = proj,
+  peakAnnotation = "Motif",
+  cutOff = "FDR <= 0.01 & Log2FC > 1"
+)
+motif_stat_up <- archr_helper_markerTFs_converter(motifsUp)
+motif_stats[[paste0(contrast_name, '_up')]] <- motif_stat_up 
+
+# motifs down
+motifsDown <- peakAnnoEnrichment(
+  seMarker = DARs[[contrast_name]],
+  ArchRProj = proj,
+  peakAnnotation = "Motif",
+  cutOff = "FDR <= 0.01 & Log2FC < -1"
+)
+motif_stat_down <- archr_helper_markerTFs_converter(motifsDown)
+motif_stats[[paste0(contrast_name, '_down')]] <- motif_stat_down
+
+
+
+
+
+
+############################ 1. EC: ACvsTI ###############################
+temp_lineage <- 'epithelial'
+contrast_name <- 'EC_ACvsTI'
+group.1 <- "EC-AC"
+group.2 <- "EC-TI"
+annotation_group <- "anno1.loc"
+cutoff_FDR <- 0.01 # cutoff is for peak selection, cutoffs for motifs are specificied in the text
+cutoff_Log2FC <- 1
+
+# calculation
+proj <- paste0('proj_', temp_lineage) %>% as.name(.) %>% eval(.)
+DARs[[contrast_name]] <- getMarkerFeatures(
+  ArchRProj = proj, 
+  useMatrix = "PeakMatrix",
+  groupBy = annotation_group,
+  normBy = 'ReadsInTSS',
+  maxCells = 20000,
+  testMethod = "wilcoxon",
+  bias = c("TSSEnrichment", "log10(nFrags)"),
+  useGroups = group.1,
+  bgdGroups = group.2
+)
+
+# clean up data
+df_stat <- archr_helper_markerPeaks_converter(DARs[[contrast_name]])
+archr_peakset_Loc <- paste0(paste0(as.character(seqnames(proj@peakSet)), ':',
+                                   start(proj@peakSet),'-',end(proj@peakSet)))
+idx_matched <- match(rownames(df_stat), archr_peakset_Loc)
+peaks_info <- as.data.frame(proj@peakSet[idx_matched], row.names = NULL)
+df_stat <- bind_cols(df_stat, peaks_info)
+
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & abs(df_stat$Log2FC) > cutoff_Log2FC), ]
+DARs_significant[[contrast_name]] <- df_stat_significant
+
+# motifs up
+motifsUp <- peakAnnoEnrichment(
+  seMarker = DARs[[contrast_name]],
+  ArchRProj = proj,
+  peakAnnotation = "Motif",
+  cutOff = "FDR <= 0.01 & Log2FC > 1"
+)
+motif_stat_up <- archr_helper_markerTFs_converter(motifsUp)
+motif_stats[[paste0(contrast_name, '_up')]] <- motif_stat_up 
+
+# motifs down
+motifsDown <- peakAnnoEnrichment(
+  seMarker = DARs[[contrast_name]],
+  ArchRProj = proj,
+  peakAnnotation = "Motif",
+  cutOff = "FDR <= 0.01 & Log2FC < -1"
+)
+motif_stat_down <- archr_helper_markerTFs_converter(motifsDown)
+motif_stats[[paste0(contrast_name, '_down')]] <- motif_stat_down
+
+
+
+
+
+############################ 2.1 EC: pouch1 vs pp ###############################
+temp_lineage <- 'epithelial'
+contrast_name <- 'EC_POU1vsPP'
+group.1 <- "EC-POU1"
+group.2 <- "EC-PP"
+annotation_group <- "anno1.loc"
+cutoff_FDR <- 0.01 # cutoff is for peak selection, cutoffs for motifs are specificied in the text
+cutoff_Log2FC <- 1
+
+# calculation
+proj <- paste0('proj_', temp_lineage) %>% as.name(.) %>% eval(.)
+DARs[[contrast_name]] <- getMarkerFeatures(
+  ArchRProj = proj, 
+  useMatrix = "PeakMatrix",
+  groupBy = annotation_group,
+  normBy = 'ReadsInTSS',
+  maxCells = 20000,
+  testMethod = "wilcoxon",
+  bias = c("TSSEnrichment", "log10(nFrags)"),
+  useGroups = group.1,
+  bgdGroups = group.2
+)
+
+# clean up data
+df_stat <- archr_helper_markerPeaks_converter(DARs[[contrast_name]])
+archr_peakset_Loc <- paste0(paste0(as.character(seqnames(proj@peakSet)), ':',
+                                   start(proj@peakSet),'-',end(proj@peakSet)))
+idx_matched <- match(rownames(df_stat), archr_peakset_Loc)
+peaks_info <- as.data.frame(proj@peakSet[idx_matched], row.names = NULL)
+df_stat <- bind_cols(df_stat, peaks_info)
+
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & abs(df_stat$Log2FC) > cutoff_Log2FC), ]
+DARs_significant[[contrast_name]] <- df_stat_significant
+
+# motifs up
+motifsUp <- peakAnnoEnrichment(
+  seMarker = DARs[[contrast_name]],
+  ArchRProj = proj,
+  peakAnnotation = "Motif",
+  cutOff = "FDR <= 0.01 & Log2FC > 1"
+)
+motif_stat_up <- archr_helper_markerTFs_converter(motifsUp)
+motif_stats[[paste0(contrast_name, '_up')]] <- motif_stat_up 
+
+# motifs down
+motifsDown <- peakAnnoEnrichment(
+  seMarker = DARs[[contrast_name]],
+  ArchRProj = proj,
+  peakAnnotation = "Motif",
+  cutOff = "FDR <= 0.01 & Log2FC < -1"
+)
+motif_stat_down <- archr_helper_markerTFs_converter(motifsDown)
+motif_stats[[paste0(contrast_name, '_down')]] <- motif_stat_down
+
+
+############################ 2.2 EC: pouch2 vs pp ###############################
+temp_lineage <- 'epithelial'
+contrast_name <- 'EC_POU2vsPP'
+group.1 <- "EC-POU2"
+group.2 <- "EC-PP"
+annotation_group <- "anno1.loc"
+cutoff_FDR <- 0.01 # cutoff is for peak selection, cutoffs for motifs are specificied in the text
+cutoff_Log2FC <- 1
+
+# calculation
+proj <- paste0('proj_', temp_lineage) %>% as.name(.) %>% eval(.)
+DARs[[contrast_name]] <- getMarkerFeatures(
+  ArchRProj = proj, 
+  useMatrix = "PeakMatrix",
+  groupBy = annotation_group,
+  normBy = 'ReadsInTSS',
+  maxCells = 20000,
+  testMethod = "wilcoxon",
+  bias = c("TSSEnrichment", "log10(nFrags)"),
+  useGroups = group.1,
+  bgdGroups = group.2
+)
+
+# clean up data
+df_stat <- archr_helper_markerPeaks_converter(DARs[[contrast_name]])
+archr_peakset_Loc <- paste0(paste0(as.character(seqnames(proj@peakSet)), ':',
+                                   start(proj@peakSet),'-',end(proj@peakSet)))
+idx_matched <- match(rownames(df_stat), archr_peakset_Loc)
+peaks_info <- as.data.frame(proj@peakSet[idx_matched], row.names = NULL)
+df_stat <- bind_cols(df_stat, peaks_info)
+
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & abs(df_stat$Log2FC) > cutoff_Log2FC), ]
+DARs_significant[[contrast_name]] <- df_stat_significant
+
+# motifs up
+motifsUp <- peakAnnoEnrichment(
+  seMarker = DARs[[contrast_name]],
+  ArchRProj = proj,
+  peakAnnotation = "Motif",
+  cutOff = "FDR <= 0.01 & Log2FC > 1"
+)
+motif_stat_up <- archr_helper_markerTFs_converter(motifsUp)
+motif_stats[[paste0(contrast_name, '_up')]] <- motif_stat_up 
+
+# motifs down
+motifsDown <- peakAnnoEnrichment(
+  seMarker = DARs[[contrast_name]],
+  ArchRProj = proj,
+  peakAnnotation = "Motif",
+  cutOff = "FDR <= 0.01 & Log2FC < -1"
+)
+motif_stat_down <- archr_helper_markerTFs_converter(motifsDown)
+motif_stats[[paste0(contrast_name, '_down')]] <- motif_stat_down
+
+
+############################ 2.3 EC: pouch vs pp ###############################
+temp_lineage <- 'epithelial'
+contrast_name <- 'EC_POUvsPP'
+group.1 <- c("EC-POU")
+group.2 <- "EC-PP"
+annotation_group <- "anno1.loc"
+cutoff_FDR <- 0.01 # cutoff is for peak selection, cutoffs for motifs are specificied in the text
+cutoff_Log2FC <- 1
+
+# calculation
+proj <- paste0('proj_', temp_lineage) %>% as.name(.) %>% eval(.)
+proj$anno1.loc[which(proj$anno1.loc %in% c("EC-POU1", "EC-POU2"))] <- "EC-POU"
+
+DARs[[contrast_name]] <- getMarkerFeatures(
+  ArchRProj = proj, 
+  useMatrix = "PeakMatrix",
+  groupBy = annotation_group,
+  normBy = 'ReadsInTSS',
+  maxCells = 20000,
+  testMethod = "wilcoxon",
+  bias = c("TSSEnrichment", "log10(nFrags)"),
+  useGroups = group.1,
+  bgdGroups = group.2
+)
+
+# clean up data
+df_stat <- archr_helper_markerPeaks_converter(DARs[[contrast_name]])
+archr_peakset_Loc <- paste0(paste0(as.character(seqnames(proj@peakSet)), ':',
+                                   start(proj@peakSet),'-',end(proj@peakSet)))
+idx_matched <- match(rownames(df_stat), archr_peakset_Loc)
+peaks_info <- as.data.frame(proj@peakSet[idx_matched], row.names = NULL)
+df_stat <- bind_cols(df_stat, peaks_info)
+
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & abs(df_stat$Log2FC) > cutoff_Log2FC), ]
+DARs_significant[[contrast_name]] <- df_stat_significant
+
+# motifs up
+motifsUp <- peakAnnoEnrichment(
+  seMarker = DARs[[contrast_name]],
+  ArchRProj = proj,
+  peakAnnotation = "Motif",
+  cutOff = "FDR <= 0.01 & Log2FC > 1"
+)
+motif_stat_up <- archr_helper_markerTFs_converter(motifsUp)
+motif_stats[[paste0(contrast_name, '_up')]] <- motif_stat_up 
+
+# motifs down
+motifsDown <- peakAnnoEnrichment(
+  seMarker = DARs[[contrast_name]],
+  ArchRProj = proj,
+  peakAnnotation = "Motif",
+  cutOff = "FDR <= 0.01 & Log2FC < -1"
+)
+motif_stat_down <- archr_helper_markerTFs_converter(motifsDown)
+motif_stats[[paste0(contrast_name, '_down')]] <- motif_stat_down
+
+############################ 3. EC: pouch2 vs pouch1 ###############################
+temp_lineage <- 'epithelial'
+contrast_name <- 'EC_POU2vsPOU1'
+group.1 <- "EC-POU2"
+group.2 <- "EC-POU1"
+annotation_group <- "anno1.loc"
+cutoff_FDR <- 0.01 # cutoff is for peak selection, cutoffs for motifs are specificied in the text
+cutoff_Log2FC <- 1
+
+# calculation
+proj <- paste0('proj_', temp_lineage) %>% as.name(.) %>% eval(.)
+DARs[[contrast_name]] <- getMarkerFeatures(
+  ArchRProj = proj, 
+  useMatrix = "PeakMatrix",
+  groupBy = annotation_group,
+  normBy = 'ReadsInTSS',
+  maxCells = 20000,
+  testMethod = "wilcoxon",
+  bias = c("TSSEnrichment", "log10(nFrags)"),
+  useGroups = group.1,
+  bgdGroups = group.2
+)
+
+# clean up data
+df_stat <- archr_helper_markerPeaks_converter(DARs[[contrast_name]])
+archr_peakset_Loc <- paste0(paste0(as.character(seqnames(proj@peakSet)), ':',
+                                   start(proj@peakSet),'-',end(proj@peakSet)))
+idx_matched <- match(rownames(df_stat), archr_peakset_Loc)
+peaks_info <- as.data.frame(proj@peakSet[idx_matched], row.names = NULL)
+df_stat <- bind_cols(df_stat, peaks_info)
+
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & abs(df_stat$Log2FC) > cutoff_Log2FC), ]
+DARs_significant[[contrast_name]] <- df_stat_significant
+
+# motifs up
+motifsUp <- peakAnnoEnrichment(
+  seMarker = DARs[[contrast_name]],
+  ArchRProj = proj,
+  peakAnnotation = "Motif",
+  cutOff = "FDR <= 0.01 & Log2FC > 1"
+)
+motif_stat_up <- archr_helper_markerTFs_converter(motifsUp)
+motif_stats[[paste0(contrast_name, '_up')]] <- motif_stat_up 
+
+# motifs down
+motifsDown <- peakAnnoEnrichment(
+  seMarker = DARs[[contrast_name]],
+  ArchRProj = proj,
+  peakAnnotation = "Motif",
+  cutOff = "FDR <= 0.01 & Log2FC < -1"
+)
+motif_stat_down <- archr_helper_markerTFs_converter(motifsDown)
+motif_stats[[paste0(contrast_name, '_down')]] <- motif_stat_down
+
+
+
+############################ 4.1 EC: pouch1 vs AC ###############################
+temp_lineage <- 'epithelial'
+contrast_name <- 'EC_POU1vsAC'
+group.1 <- "EC-POU1"
+group.2 <- "EC-AC"
+annotation_group <- "anno1.loc"
+cutoff_FDR <- 0.01 # cutoff is for peak selection, cutoffs for motifs are specificied in the text
+cutoff_Log2FC <- 1
+
+# calculation
+proj <- paste0('proj_', temp_lineage) %>% as.name(.) %>% eval(.)
+DARs[[contrast_name]] <- getMarkerFeatures(
+  ArchRProj = proj, 
+  useMatrix = "PeakMatrix",
+  groupBy = annotation_group,
+  normBy = 'ReadsInTSS',
+  maxCells = 20000,
+  testMethod = "wilcoxon",
+  bias = c("TSSEnrichment", "log10(nFrags)"),
+  useGroups = group.1,
+  bgdGroups = group.2
+)
+
+# clean up data
+df_stat <- archr_helper_markerPeaks_converter(DARs[[contrast_name]])
+archr_peakset_Loc <- paste0(paste0(as.character(seqnames(proj@peakSet)), ':',
+                                   start(proj@peakSet),'-',end(proj@peakSet)))
+idx_matched <- match(rownames(df_stat), archr_peakset_Loc)
+peaks_info <- as.data.frame(proj@peakSet[idx_matched], row.names = NULL)
+df_stat <- bind_cols(df_stat, peaks_info)
+
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & abs(df_stat$Log2FC) > cutoff_Log2FC), ]
+DARs_significant[[contrast_name]] <- df_stat_significant
+
+# motifs up
+motifsUp <- peakAnnoEnrichment(
+  seMarker = DARs[[contrast_name]],
+  ArchRProj = proj,
+  peakAnnotation = "Motif",
+  cutOff = "FDR <= 0.01 & Log2FC > 1"
+)
+motif_stat_up <- archr_helper_markerTFs_converter(motifsUp)
+motif_stats[[paste0(contrast_name, '_up')]] <- motif_stat_up 
+
+# motifs down
+motifsDown <- peakAnnoEnrichment(
+  seMarker = DARs[[contrast_name]],
+  ArchRProj = proj,
+  peakAnnotation = "Motif",
+  cutOff = "FDR <= 0.01 & Log2FC < -1"
+)
+motif_stat_down <- archr_helper_markerTFs_converter(motifsDown)
+motif_stats[[paste0(contrast_name, '_down')]] <- motif_stat_down
+
+
+############################ 4.2 EC: pouch2 vs AC ###############################
+temp_lineage <- 'epithelial'
+contrast_name <- 'EC_POU2vsAC'
+group.1 <- "EC-POU2"
+group.2 <- "EC-AC"
+annotation_group <- "anno1.loc"
+cutoff_FDR <- 0.01 # cutoff is for peak selection, cutoffs for motifs are specificied in the text
+cutoff_Log2FC <- 1
+
+# calculation
+proj <- paste0('proj_', temp_lineage) %>% as.name(.) %>% eval(.)
+DARs[[contrast_name]] <- getMarkerFeatures(
+  ArchRProj = proj, 
+  useMatrix = "PeakMatrix",
+  groupBy = annotation_group,
+  normBy = 'ReadsInTSS',
+  maxCells = 20000,
+  testMethod = "wilcoxon",
+  bias = c("TSSEnrichment", "log10(nFrags)"),
+  useGroups = group.1,
+  bgdGroups = group.2
+)
+
+# clean up data
+df_stat <- archr_helper_markerPeaks_converter(DARs[[contrast_name]])
+archr_peakset_Loc <- paste0(paste0(as.character(seqnames(proj@peakSet)), ':',
+                                   start(proj@peakSet),'-',end(proj@peakSet)))
+idx_matched <- match(rownames(df_stat), archr_peakset_Loc)
+peaks_info <- as.data.frame(proj@peakSet[idx_matched], row.names = NULL)
+df_stat <- bind_cols(df_stat, peaks_info)
+
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & abs(df_stat$Log2FC) > cutoff_Log2FC), ]
+DARs_significant[[contrast_name]] <- df_stat_significant
+
+# motifs up
+motifsUp <- peakAnnoEnrichment(
+  seMarker = DARs[[contrast_name]],
+  ArchRProj = proj,
+  peakAnnotation = "Motif",
+  cutOff = "FDR <= 0.01 & Log2FC > 1"
+)
+motif_stat_up <- archr_helper_markerTFs_converter(motifsUp)
+motif_stats[[paste0(contrast_name, '_up')]] <- motif_stat_up 
+
+# motifs down
+motifsDown <- peakAnnoEnrichment(
+  seMarker = DARs[[contrast_name]],
+  ArchRProj = proj,
+  peakAnnotation = "Motif",
+  cutOff = "FDR <= 0.01 & Log2FC < -1"
+)
+motif_stat_down <- archr_helper_markerTFs_converter(motifsDown)
+motif_stats[[paste0(contrast_name, '_down')]] <- motif_stat_down
+
+
+############################ 4.3 EC: pouch vs AC ###############################
+temp_lineage <- 'epithelial'
+contrast_name <- 'EC_POUvsAC'
+group.1 <- c("EC-POU")
+group.2 <- "EC-AC"
+annotation_group <- "anno1.loc"
+cutoff_FDR <- 0.01 # cutoff is for peak selection, cutoffs for motifs are specificied in the text
+cutoff_Log2FC <- 1
+
+# calculation
+proj <- paste0('proj_', temp_lineage) %>% as.name(.) %>% eval(.)
+proj$anno1.loc[which(proj$anno1.loc %in% c("EC-POU1", "EC-POU2"))] <- "EC-POU"
+DARs[[contrast_name]] <- getMarkerFeatures(
+  ArchRProj = proj, 
+  useMatrix = "PeakMatrix",
+  groupBy = annotation_group,
+  normBy = 'ReadsInTSS',
+  maxCells = 20000,
+  testMethod = "wilcoxon",
+  bias = c("TSSEnrichment", "log10(nFrags)"),
+  useGroups = group.1,
+  bgdGroups = group.2
+)
+
+# clean up data
+df_stat <- archr_helper_markerPeaks_converter(DARs[[contrast_name]])
+archr_peakset_Loc <- paste0(paste0(as.character(seqnames(proj@peakSet)), ':',
+                                   start(proj@peakSet),'-',end(proj@peakSet)))
+idx_matched <- match(rownames(df_stat), archr_peakset_Loc)
+peaks_info <- as.data.frame(proj@peakSet[idx_matched], row.names = NULL)
+df_stat <- bind_cols(df_stat, peaks_info)
+
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & abs(df_stat$Log2FC) > cutoff_Log2FC), ]
+DARs_significant[[contrast_name]] <- df_stat_significant
+
+# motifs up
+motifsUp <- peakAnnoEnrichment(
+  seMarker = DARs[[contrast_name]],
+  ArchRProj = proj,
+  peakAnnotation = "Motif",
+  cutOff = "FDR <= 0.01 & Log2FC > 1"
+)
+motif_stat_up <- archr_helper_markerTFs_converter(motifsUp)
+motif_stats[[paste0(contrast_name, '_up')]] <- motif_stat_up 
+
+# motifs down
+motifsDown <- peakAnnoEnrichment(
+  seMarker = DARs[[contrast_name]],
+  ArchRProj = proj,
+  peakAnnotation = "Motif",
+  cutOff = "FDR <= 0.01 & Log2FC < -1"
+)
+motif_stat_down <- archr_helper_markerTFs_converter(motifsDown)
+motif_stats[[paste0(contrast_name, '_down')]] <- motif_stat_down
+
+
+############################ 5. EC: TIvsPP ###############################
+temp_lineage <- 'epithelial'
+contrast_name <- 'EC_TIvsPP'
+group.1 <- "EC-TI"
+group.2 <- "EC-PP"
+annotation_group <- "anno1.loc"
+cutoff_FDR <- 0.01 # cutoff is for peak selection, cutoffs for motifs are specificied in the text
+cutoff_Log2FC <- 1
+
+# calculation
+proj <- paste0('proj_', temp_lineage) %>% as.name(.) %>% eval(.)
+DARs[[contrast_name]] <- getMarkerFeatures(
+  ArchRProj = proj, 
+  useMatrix = "PeakMatrix",
+  groupBy = annotation_group,
+  normBy = 'ReadsInTSS',
+  maxCells = 20000,
+  testMethod = "wilcoxon",
+  bias = c("TSSEnrichment", "log10(nFrags)"),
+  useGroups = group.1,
+  bgdGroups = group.2
+)
+
+# clean up data
+df_stat <- archr_helper_markerPeaks_converter(DARs[[contrast_name]])
+archr_peakset_Loc <- paste0(paste0(as.character(seqnames(proj@peakSet)), ':',
+                                   start(proj@peakSet),'-',end(proj@peakSet)))
+idx_matched <- match(rownames(df_stat), archr_peakset_Loc)
+peaks_info <- as.data.frame(proj@peakSet[idx_matched], row.names = NULL)
+df_stat <- bind_cols(df_stat, peaks_info)
+
+df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & abs(df_stat$Log2FC) > cutoff_Log2FC), ]
+DARs_significant[[contrast_name]] <- df_stat_significant
+
+# motifs up
+motifsUp <- peakAnnoEnrichment(
+  seMarker = DARs[[contrast_name]],
+  ArchRProj = proj,
+  peakAnnotation = "Motif",
+  cutOff = "FDR <= 0.01 & Log2FC > 1"
+)
+motif_stat_up <- archr_helper_markerTFs_converter(motifsUp)
+motif_stats[[paste0(contrast_name, '_up')]] <- motif_stat_up 
+
+# motifs down
+motifsDown <- peakAnnoEnrichment(
+  seMarker = DARs[[contrast_name]],
+  ArchRProj = proj,
+  peakAnnotation = "Motif",
+  cutOff = "FDR <= 0.01 & Log2FC < -1"
+)
+motif_stat_down <- archr_helper_markerTFs_converter(motifsDown)
+motif_stats[[paste0(contrast_name, '_down')]] <- motif_stat_down
+
+
+
+
+# ############################ 0, summary ###############################
+saveRDS(DARs$EC2vsEC1, '~/yuzhao1/work/final_RC2atac/peaks/3DARs/DARs_EC_extra_EC2vsEC1.rds')
+saveRDS(DARs_significant, '~/yuzhao1/work/final_RC2atac/peaks/3DARs/DARs_significant_EC.rds')
+saveRDS(motif_stats, '~/yuzhao1/work/final_RC2atac/peaks/3DARs/motif_stats_EC.rds')
+
+
+
+

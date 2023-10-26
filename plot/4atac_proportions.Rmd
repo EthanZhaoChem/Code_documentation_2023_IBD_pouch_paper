@@ -1,0 +1,433 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('~/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+```
+
+```{r, include = F, eval=F}
+proj <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_filtered/")
+proj_epithelial <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_epithelial_filtered2/")
+proj_immune <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_immune_filtered/")
+proj_tcell <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_tcell_filtered2/")
+proj_bcell <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_bcell_filtered/")
+proj_myeloid <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_myeloid_filtered2/")
+proj_others <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_others_filtered2/")
+
+union <- as.data.frame(proj@cellColData)
+epithelial <- as.data.frame(proj_epithelial@cellColData)
+immune <- as.data.frame(proj_immune@cellColData)
+tcell <- as.data.frame(proj_tcell@cellColData)
+bcell <- as.data.frame(proj_bcell@cellColData)
+myeloid <- as.data.frame(proj_myeloid@cellColData)
+others <- as.data.frame(proj_others@cellColData)
+```
+
+###################### 1. Confusion MTX ########################
+
+# epithelial EC, all pou
+
+```{r}
+out.dir <- '~/yuzhao1/work/manu/rc2/plots/4atac_proportion/epithelial/'
+```
+
+```{r}
+seurat <- subset(epithelial, epithelial$anno1 %in% c("EC1-1", "EC1-2", "EC2-1", "EC2-2"))
+seurat$anno1[seurat$anno1 %in% c("EC1-1", "EC1-2")] <- 'EC1'
+seurat$anno1[seurat$anno1 %in% c("EC2-1", "EC2-2")] <- 'EC2'
+```
+
+```{r}
+xx.EC <- table(seurat[, c('anno1', 'anno1.loc')]) %>% as.data.frame.matrix() 
+xx.EC <- scale(xx.EC, center = F, scale= xx.EC%>% colSums(.))
+xx.EC <- t(xx.EC)
+```
+
+```{r}
+row.split <- c('EC-AC', 'EC-POU', 'EC-PP', 'EC-TI')
+p1 <- Heatmap(xx.EC, col = manual_colors_gradient3, cluster_columns = F, cluster_rows = F, name = 'cell percentage', show_row_names = F,
+        rect_gp = gpar(col = "white", lwd = 2), cluster_row_slices = FALSE,
+        border = T, column_gap = unit(3, "mm"),
+        row_split = factor(row.split, levels = c('EC-AC', 'EC-POU', 'EC-PP', 'EC-TI')),
+        use_raster = F
+        )
+
+pdf(paste0(out.dir, 'EC_Allpou.pdf'), width = 4, height = 5.2, pointsize = 1)
+print(p1)
+dev.off()
+```
+
+# epithelial EC, pou1 pou2, pp1 pp2
+
+```{r}
+seurat <- subset(epithelial, epithelial$anno1 %in% c("EC1-1", "EC1-2", "EC2-1", "EC2-2"))
+seurat$anno1.loc[seurat$anno1 %in% c("EC1-1", "EC1-2") & seurat$biopsy_location =='POU'] <- 'EC-POU1'
+seurat$anno1.loc[seurat$anno1 %in% c("EC2-1", "EC2-2") & seurat$biopsy_location =='POU'] <- 'EC-POU2'
+seurat$anno1[seurat$anno1 %in% c("EC1-1", "EC1-2")] <- 'EC1'
+seurat$anno1[seurat$anno1 %in% c("EC2-1", "EC2-2")] <- 'EC2'
+```
+
+```{r}
+xx.EC <- table(seurat[c('anno1', 'anno1.loc')]) %>% as.data.frame.matrix() 
+xx.EC <- scale(xx.EC, center = F, scale= xx.EC%>% colSums(.))
+xx.EC <- t(xx.EC)
+```
+
+```{r}
+row.split <- c('EC-AC',  'EC-POU1', 'EC-POU2', 'EC-PP', 'EC-TI')
+p1 <- Heatmap(xx.EC, col = manual_colors_gradient3, cluster_columns = F, cluster_rows = F, name = 'cell percentage', show_row_names = F,
+        rect_gp = gpar(col = "white", lwd = 2), cluster_row_slices = FALSE,
+        border = T, column_gap = unit(3, "mm"),
+        row_split = factor(row.split, levels = c('EC-AC', 'EC-POU2', 'EC-PP2', 'EC-POU1', 'EC-PP', 'EC-TI')),
+        use_raster = F
+        )
+
+pdf(paste0(out.dir, 'EC_pou1-2.pdf'), width = 4, height = 6.0, pointsize = 1)
+print(p1)
+dev.off()
+```
+
+
+# epithelial Stem, all pou
+
+```{r}
+out.dir <- '~/yuzhao1/work/manu/rc2/plots/4atac_proportion/epithelial/'
+```
+
+```{r}
+seurat <- subset(epithelial, epithelial$anno1 %in% c("Stem"))
+seurat$anno1 <- seurat$anno2
+```
+
+```{r}
+xx.Stem <- table(seurat[, c('anno1', 'anno1.loc')]) %>% as.data.frame.matrix() 
+xx.Stem <- scale(xx.Stem, center = F, scale= xx.Stem%>% colSums(.))
+xx.Stem <- t(xx.Stem)
+```
+
+```{r}
+row.split <- c('Stem-AC', 'Stem-POU', 'Stem-PP', 'Stem-TI')
+p1 <- Heatmap(xx.Stem, col = manual_colors_gradient3, cluster_columns = F, cluster_rows = F, name = 'cell percentage', show_row_names = F,
+        rect_gp = gpar(col = "white", lwd = 2), cluster_row_slices = FALSE,
+        border = T, column_gap = unit(3, "mm"),
+        row_split = factor(row.split, levels = c('Stem-AC', 'Stem-POU', 'Stem-PP', 'Stem-TI')),
+        use_raster = F
+        )
+
+pdf(paste0(out.dir, 'Stem_Allpou.pdf'), width = 4, height = 5.2, pointsize = 1)
+print(p1)
+dev.off()
+```
+
+# epithelial Stem, pou1 pou2
+
+```{r}
+seurat <- subset(epithelial, epithelial$anno1 %in% c("Stem"))
+seurat$anno1.loc[seurat$anno2 %in% c("Stem1") & seurat$biopsy_location =='POU'] <- 'Stem-POU1'
+seurat$anno1.loc[seurat$anno2 %in% c("Stem2") & seurat$biopsy_location =='POU'] <- 'Stem-POU2'
+seurat$anno1 <- seurat$anno2
+```
+
+```{r}
+xx.Stem <- table(seurat[c('anno1', 'anno1.loc')]) %>% as.data.frame.matrix() 
+xx.Stem <- scale(xx.Stem, center = F, scale= xx.Stem%>% colSums(.))
+xx.Stem <- t(xx.Stem)
+```
+
+```{r}
+row.split <- c('Stem-AC',  'Stem-POU1', 'Stem-POU2', 'Stem-PP', 'Stem-TI')
+p1 <- Heatmap(xx.Stem, col = manual_colors_gradient3, cluster_columns = F, cluster_rows = F, name = 'cell percentage', show_row_names = F,
+        rect_gp = gpar(col = "white", lwd = 2), cluster_row_slices = FALSE,
+        border = T, column_gap = unit(3, "mm"),
+        row_split = factor(row.split, levels = c('Stem-AC', 'Stem-POU2', 'Stem-POU1', 'Stem-PP', 'Stem-TI')),
+        use_raster = F
+        )
+
+pdf(paste0(out.dir, 'Stem_pou1-2.pdf'), width = 4, height = 6.0, pointsize = 1)
+print(p1)
+dev.off()
+```
+
+
+# epithelial Goblet
+```{r}
+out.dir <- '~/yuzhao1/work/manu/rc2/plots/4atac_proportion/epithelial/'
+```
+
+```{r}
+seurat <- subset(epithelial, epithelial$anno1 %in% c("Goblet1", "Goblet2"))
+seurat$anno1.loc <- seurat$anno1
+seurat$anno1.loc[seurat$anno1 %in% c("Goblet1", "Goblet2") & seurat$biopsy_location =='POU'] <- 'Goblet-POU'
+seurat$anno1.loc[seurat$anno1 %in% c("Goblet1", "Goblet2") & seurat$biopsy_location =='PP'] <- 'Goblet-PP'
+seurat$anno1.loc[seurat$anno1 %in% c("Goblet1", "Goblet2") & seurat$biopsy_location =='TI'] <- 'Goblet-TI'
+seurat$anno1.loc[seurat$anno1 %in% c("Goblet1", "Goblet2") & seurat$biopsy_location =='AC'] <- 'Goblet-AC'
+```
+
+```{r}
+xx.Goblet <- table(seurat[, c('anno1.loc','anno1')]) %>% as.data.frame.matrix() 
+xx.Goblet <- scale(xx.Goblet, center = F, scale= xx.Goblet%>% colSums(.))
+```
+
+```{r}
+row.split <- c('Goblet-AC', 'Goblet-POU', 'Goblet-PP', 'Goblet-TI')
+p1 <- Heatmap(xx.Goblet, col = manual_colors_gradient3, cluster_columns = F, cluster_rows = F, name = 'cell percentage', show_row_names = T,
+        rect_gp = gpar(col = "white", lwd = 2), cluster_row_slices = FALSE,
+        border = T, column_gap = unit(3, "mm"),
+        row_split = factor(row.split, levels = c('Goblet-AC', 'Goblet-POU', 'Goblet-PP', 'Goblet-TI')),
+        use_raster = F
+        )
+
+pdf(paste0(out.dir, 'Goblet.pdf'), width = 4.5, height = 5, pointsize = 1)
+print(p1)
+dev.off()
+```
+
+
+###################### 2. Composition by location and sample ########################
+
+```{r}
+theme.composition.loc <-    
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_rect(colour = "black", fill=NA, size=1),
+    panel.background = element_blank(),
+    panel.grid = element_blank(),
+    axis.text.y = element_text(size = 15, face = 'bold', colour = 'black'),
+    axis.text.x = element_text(size = 15, face = 'bold', colour = 'black'),
+    # axis.ticks = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(size = 15, face = 'bold', colour = 'black'),
+    
+    legend.key = element_blank(),
+    legend.title = element_blank(),
+    legend.position = "bottom",
+    legend.text = element_text(size = 8),
+    plot.margin = margin(0.5, 0.5, 0.5, 0.5, "cm"),
+    plot.title = element_blank())
+
+theme.composition.sample <-
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_rect(colour = "black", fill=NA, size=1),
+    panel.background = element_blank(),
+    panel.grid = element_blank(),
+    axis.text.y = element_text(size = 15, face = 'bold', colour = 'black'),
+    axis.text.x = element_text(size = 9, face = 'bold', colour = 'black', angle=45, hjust = 1, vjust = 1),
+    # axis.ticks = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(size = 15, face = 'bold', colour = 'black'),
+    
+    legend.key = element_blank(),
+    legend.title = element_blank(),
+    legend.position = "bottom",
+    legend.text = element_text(size = 12),
+    plot.margin = margin(0.5, 0.5, 0.5, 0.5, "cm"),
+    plot.title = element_blank())
+```
+
+
+### union-lineage
+
+```{r}
+seurat <- union
+out.dir <- '~/yuzhao1/work/manu/rc2/plots/4atac_proportion/union/'
+```
+
+```{r}
+# per location
+df <- seurat[,c('lineage', 'biopsy_location')]
+df$xx1 <- rep(1, nrow(df))
+df$xx1.sum <- 0
+df2 <- aggregate(xx1~.,df,FUN=sum)
+
+for (temp in unique(df$biopsy_location)){
+  df2[df2$biopsy_location == temp, 'xx1.sum'] <- sum(df[df$biopsy_location == temp, 'xx1'])
+}
+df2$xx2 <- df2$xx1/df2$xx1.sum
+
+df2$biopsy_location <- factor(df2$biopsy_location, levels = c('TI', 'PP', 'POU', 'AC'))
+p1 <- ggplot(df2, aes(x = biopsy_location, y = xx2, fill = lineage)) +
+  geom_bar(position = "stack", stat = "identity")+
+  scale_fill_manual(values = custom_colors_atac_lineage)+
+  labs(title = "", y = "Proportion of cells (%)", x = "", fill = "")+
+  theme.composition.loc
+
+pdf(paste0(out.dir, 'location.pdf'), width = 4, height = 6, pointsize = 1)
+print(p1)
+dev.off()
+```
+
+```{r}
+# per sample
+seurat$sample <- paste0(seurat$patient,'-',seurat$biopsy_location)
+df <- seurat[,c('lineage', 'sample')]
+df$xx1 <- rep(1, nrow(df))
+df$xx1.sum <- 0
+df2 <- aggregate(xx1~.,df,FUN=sum)
+
+for (temp in unique(df$sample)){
+  df2[df2$sample == temp, 'xx1.sum'] <- sum(df[df$sample == temp, 'xx1'])
+}
+df2$xx2 <- 100*df2$xx1/df2$xx1.sum
+
+df2$sample <- factor(df2$sample, 
+                    levels = c("HA01-TI","HA02-TI","HA04-TI","HA50-TI","HA51-TI","HA55-TI",
+                               "HA01-AC","HA02-AC","HA04-AC","HA50-AC","HA51-AC","HA55-AC",
+                               "OR101-PP","OR102-PP","OR109-PP","OR43-PP","OR48-PP","OR72-PP",
+                               "OR101-POU","OR102-POU","OR109-POU","OR43-POU","OR48-POU","OR72-POU"))
+
+p2 <-ggplot(df2, aes(x = sample, y = xx2, fill = lineage)) +
+  geom_bar(position = "stack", stat = "identity")+
+  scale_fill_manual(values = custom_colors_atac_lineage)+
+  labs(title = "", y = "Proportion of cells (%)", x = "", fill = "")+
+  theme.composition.sample
+
+pdf(paste0(out.dir, 'sample.pdf'), width = 9, height = 6, pointsize = 1)
+print(p2)
+dev.off()
+```
+
+### Per lineage
+
+```{r}
+for (lineage.i in unique(union$lineage)){
+  seurat <- eval(as.name(lineage.i))
+  color.values = eval(as.name(paste0('custom_colors_atac_', lineage.i)))
+  out.dir <- paste0('~/yuzhao1/work/manu/rc2/plots/4atac_proportion/', lineage.i, '/')
+  
+  
+  ### plot location.pdf
+  df <- seurat[,c('anno1', 'biopsy_location')]
+  df$xx1 <- rep(1, nrow(df))
+  df$xx1.sum <- 0
+  df2 <- aggregate(xx1~.,df,FUN=sum)
+  
+  for (temp in unique(df$biopsy_location)){
+    df2[df2$biopsy_location == temp, 'xx1.sum'] <- sum(df[df$biopsy_location == temp, 'xx1'])
+  }
+  df2$xx2 <- 100*df2$xx1/df2$xx1.sum
+  
+  df2$biopsy_location <- factor(df2$biopsy_location, levels = c('TI', 'PP', 'POU', 'AC'))
+  p1<-ggplot(df2, aes(x = biopsy_location, y = xx2, fill = anno1)) +
+    geom_bar(position = "stack", stat = "identity")+
+    scale_fill_manual(values = color.values)+
+    labs(title = "", y = "Proportion of cells (%)", x = "", fill = "")+
+    theme.composition.loc
+  
+  # plot
+  pdf(paste0(out.dir, 'location.pdf'), width = 5, height = 6, pointsize = 1)
+  print(p1)
+  dev.off()
+  
+  ### plot sample.pdf
+  seurat$sample <- paste0(seurat$patient,'-',seurat$biopsy_location)
+  df <- seurat[,c('anno1', 'sample')]
+  
+  df$xx1 <- rep(1, nrow(df))
+  df$xx1.sum <- 0
+  df2 <- aggregate(xx1~.,df,FUN=sum)
+  for (temp in unique(df$sample)){
+    df2[df2$sample == temp, 'xx1.sum'] <- sum(df[df$sample == temp, 'xx1'])
+  }
+  df2$xx2 <- 100*df2$xx1/df2$xx1.sum
+  
+  df2$sample <- factor(df2$sample, 
+                      levels = c("HA01-TI","HA02-TI","HA04-TI","HA50-TI","HA51-TI","HA55-TI",
+                                 "OR101-PP","OR102-PP","OR109-PP","OR43-PP","OR48-PP","OR72-PP",
+                                 "OR101-POU","OR102-POU","OR109-POU","OR43-POU","OR48-POU","OR72-POU",
+                                 "HA01-AC","HA02-AC","HA04-AC","HA50-AC","HA51-AC","HA55-AC"))
+  p2 <- ggplot(df2, aes(x = sample, y = xx2, fill = anno1)) +
+    geom_bar(position = "stack", stat = "identity")+
+    scale_fill_manual(values = color.values)+
+    labs(title = "", y = "Proportion of cells (%)", x = "", fill = "")+
+    theme.composition.sample
+  
+  # plot
+  pdf(paste0(out.dir, 'sample.pdf'), width = 9, height = 6, pointsize = 1)
+  print(p2)
+  dev.off()
+}
+
+
+```
+
+
+```{r}
+lineage.i <- 'epithelial'
+seurat <- eval(as.name(lineage.i))
+color.values = custom_colors_atac_epithelial_anno2
+out.dir <- paste0('~/yuzhao1/work/manu/rc2/plots/4atac_proportion/', lineage.i, '/')
+
+
+### plot location.pdf
+df <- seurat[,c('anno2', 'biopsy_location')]
+df$xx1 <- rep(1, nrow(df))
+df$xx1.sum <- 0
+df2 <- aggregate(xx1~.,df,FUN=sum)
+
+for (temp in unique(df$biopsy_location)){
+  df2[df2$biopsy_location == temp, 'xx1.sum'] <- sum(df[df$biopsy_location == temp, 'xx1'])
+}
+df2$xx2 <- 100*df2$xx1/df2$xx1.sum
+
+df2$biopsy_location <- factor(df2$biopsy_location, levels = c('TI', 'PP', 'POU', 'AC'))
+p1<-ggplot(df2, aes(x = biopsy_location, y = xx2, fill = anno2)) +
+  geom_bar(position = "stack", stat = "identity")+
+  scale_fill_manual(values = color.values)+
+  labs(title = "", y = "Proportion of cells (%)", x = "", fill = "")+
+  theme.composition.loc
+
+# plot
+pdf(paste0(out.dir, 'location.pdf'), width = 5, height = 6, pointsize = 1)
+print(p1)
+dev.off()
+
+### plot sample.pdf
+seurat$sample <- paste0(seurat$patient,'-',seurat$biopsy_location)
+df <- seurat[,c('anno2', 'sample')]
+
+df$xx1 <- rep(1, nrow(df))
+df$xx1.sum <- 0
+df2 <- aggregate(xx1~.,df,FUN=sum)
+for (temp in unique(df$sample)){
+  df2[df2$sample == temp, 'xx1.sum'] <- sum(df[df$sample == temp, 'xx1'])
+}
+df2$xx2 <- 100*df2$xx1/df2$xx1.sum
+
+df2$sample <- factor(df2$sample, 
+                    levels = c("HA01-TI","HA02-TI","HA04-TI","HA50-TI","HA51-TI","HA55-TI",
+                               "OR101-PP","OR102-PP","OR109-PP","OR43-PP","OR48-PP","OR72-PP",
+                               "OR101-POU","OR102-POU","OR109-POU","OR43-POU","OR48-POU","OR72-POU",
+                               "HA01-AC","HA02-AC","HA04-AC","HA50-AC","HA51-AC","HA55-AC"))
+p2 <- ggplot(df2, aes(x = sample, y = xx2, fill = anno2)) +
+  geom_bar(position = "stack", stat = "identity")+
+  scale_fill_manual(values = color.values)+
+  labs(title = "", y = "Proportion of cells (%)", x = "", fill = "")+
+  theme.composition.sample
+
+# plot
+pdf(paste0(out.dir, 'sample.pdf'), width = 9, height = 6, pointsize = 1)
+print(p2)
+dev.off()
+```
+
+
+
+

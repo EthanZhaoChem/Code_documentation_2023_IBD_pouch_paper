@@ -1,0 +1,152 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(zoo)
+library(Seurat)
+library(pracma)
+source('~/yuzhao1/scripts/plot.R')
+source('~/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('~/yuzhao1/work/manu/rc2/scripts/rna_deg_markers.R')
+```
+
+```{r}
+dir.out <- '~/yuzhao1/work/manu/rc2/plots/3pseudotime_rna/pouch_EC1/'
+dir.out <- '~/yuzhao1/work/manu/rc2/plots/3pseudotime_rna/pouch_EC2/'
+```
+
+# prepare data
+```{r, include = F, eval=F}
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+epithelial <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/epithelial3.rds')
+```
+
+```{r}
+seurat <- subset(epithelial, cells = Cells(epithelial)[epithelial$biopsy_location %in% c('POU')])
+
+ann.meta <- read.table('~/yuzhao1/work/final_RC2rna/celloracle/exported_Anndata_metadata/pouch.csv', 
+                       header = T, sep = ',')
+colnames(ann.meta)[[1]] <- 'cellID'
+meta.toadd <- ann.meta[, c('cellID', "Lineage_EC1", "Lineage_EC2", "Pseudotime_Lineage_EC1", "Pseudotime_Lineage_EC2", "Pseudotime")]
+rownames(meta.toadd) <- meta.toadd$cellID
+seurat <- AddMetaData(seurat, meta.toadd)
+```
+
+```{r}
+seuratL1 <- subset(seurat, Lineage_EC1 == 'True')
+seuratL2 <- subset(seurat, Lineage_EC2 == 'True')
+seuratL1 <- FindVariableFeatures(seuratL1, nfeatures = 100)
+seuratL2 <- FindVariableFeatures(seuratL2, nfeatures = 100)
+```
+
+## Section 1: EC1 lineage
+
+# prepare a pool of genes: normalized expression (unscaled)
+
+```{r, eval=F}
+genes_of_interest <- c('REG1A', 'DMBT1', 'SPINK1', 'MUC2', 'OLFM4', 'EFNA1', 'SAE1',
+            'ADH1C', 'SATB2', 'CEACAM7', 'CA2', 'AQP8', 'HES1', 'NXPE4', 'HMGCS2',
+            'RPSA', 'CFTR', 'RPL11', 'CEACAM5', 'SOX9', 'MECOM', 'TFCP2L1', 'CD24','FCGBP',
+            'LCN2', 'SLC7A7', 'GSTA1', 'ACE2', 'RBP2', 'APOA4', 'FABP6', 'ABCC2', 'ENPEP',
+            'APOA1','APOB', 'SELENOP', 'TRPM6') %>% union(., VariableFeatures(seuratL1)) %>% 
+   union(., unlist(rna.epithelial.markers))%>% 
+   union(., rna_deg_markers_ec_tfs) %>% 
+   unique()
+
+df <- FetchData(seuratL1, genes_of_interest)
+df <- as.data.frame(df)
+df$Pseudotime <- seuratL1$Pseudotime
+df <- df[order(df$Pseudotime, decreasing = F), ]
+df <- t(df)
+df <- df[1:(nrow(df)-1), ]
+step <- ceil(ncol(df)/100)
+window <- 3*step
+df2 <- zoo::rollapply(t(df), width=window, by=step, FUN=mean) %>% t()
+# df2 <- df2 %>% t() %>% scale() %>% t()
+```
+
+# line fiited for a specific gene
+
+```{r, eval=F}
+dir.out <- '~/yuzhao1/work/manu/rc2/plots/3pseudotime_rna/pouch_EC1/'
+library(mgcv) 
+for (gene in genes_of_interest) {
+   df3 <- data.frame(time = 1:ncol(df2)/ncol(df2),
+                  expression = df2[gene,])
+pdf(paste0(dir.out, gene, '.pdf'), width = 7, height = 7, pointsize = 1)
+p <- ggplot(data = df3, aes(x = time, y = expression)) +
+        geom_point(aes(color = "red")) +
+        # geom_smooth(method = "glm", formula = y ~ poly(x, 10)) +
+        geom_smooth(method = "gam", formula = y ~ s(x, bs='cs')) +
+        labs()
+
+print(p)
+dev.off()
+}
+
+```
+
+
+
+
+## Section 2: EC2 lineage
+
+# prepare a pool of genes: normalized expression (unscaled)
+
+```{r, eval=F}
+genes_of_interest <- c('REG1A', 'DMBT1', 'SPINK1', 'MUC2', 'OLFM4', 'EFNA1', 'SAE1',
+            'ADH1C', 'SATB2', 'CEACAM7', 'CA2', 'AQP8', 'HES1', 'NXPE4', 'HMGCS2',
+            'RPSA', 'CFTR', 'RPL11', 'CEACAM5', 'SOX9', 'MECOM', 'TFCP2L1', 'CD24','FCGBP',
+            'LCN2', 'SLC7A7', 'GSTA1', 'ACE2', 'RBP2', 'APOA4', 'FABP6', 'ABCC2', 'ENPEP',
+            'APOA1','APOB', 'SELENOP', 'TRPM6') %>% union(., VariableFeatures(seuratL1)) %>% 
+   union(., unlist(rna.epithelial.markers))%>% 
+   union(., rna_deg_markers_ec_tfs) %>% 
+   unique()
+
+df <- FetchData(seuratL2, genes_of_interest)
+df <- as.data.frame(df)
+df$Pseudotime <- seuratL2$Pseudotime
+df <- df[order(df$Pseudotime, decreasing = F), ]
+df <- t(df)
+df <- df[1:(nrow(df)-1), ]
+step <- ceil(ncol(df)/100)
+window <- 3*step
+df2 <- zoo::rollapply(t(df), width=window, by=step, FUN=mean) %>% t()
+# df2 <- df2 %>% t() %>% scale() %>% t()
+```
+
+# line fiited for a specific gene
+
+```{r, eval=F}
+dir.out <- '~/yuzhao1/work/manu/rc2/plots/3pseudotime_rna/pouch_EC2/'
+for (gene in genes_of_interest) {
+   df3 <- data.frame(time = 1:ncol(df2)/ncol(df2),
+                  expression = df2[gene,])
+pdf(paste0(dir.out, gene, '.pdf'), width = 7, height = 7, pointsize = 1)
+p <- ggplot(data = df3, aes(x = time, y = expression)) +
+        geom_point(aes(color = "red")) +
+        # geom_smooth(method = "glm", formula = y ~ poly(x, 10)) +
+        geom_smooth(method = "gam", formula = y ~ s(x, bs='cs')) +
+        labs()
+print(p)
+dev.off()
+}
+
+```
+
+
+```{r}
+FeaturePlot(seurat, 'CREB3L3', reduction = 'harmony_umap', dims = c(1,2))
+```
+
+
+

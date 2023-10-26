@@ -1,0 +1,90 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(ArchR)
+library(parallel)
+library(BSgenome.Hsapiens.UCSC.hg38)
+library(VennDiagram)
+library(factoextra)
+library(cluster)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('~/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+source('~/yuzhao1/work/manu/rc2/scripts/rna_deg_markers.R')
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/tfs.R')
+```
+
+```{r}
+out.dir <- '~/yuzhao1/work/manu/rc2/plots/8atac_DEGvsEnhancervsTF_preparation/'
+```
+
+
+```{r, include = F, eval=F}
+proj <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_epithelial_filtered2_EC/")
+```
+
+```{r}
+# enhancer or promoter region
+archr_conns <- getPeak2GeneLinks(
+  ArchRProj = proj,
+  corCutOff = 0.6,
+  resolution = 1,
+  returnLoops = FALSE
+)
+
+peakDic <- paste(archr_conns@metadata$peakSet@seqnames,
+                 start(archr_conns@metadata$peakSet@ranges),
+                 end(archr_conns@metadata$peakSet@ranges),
+                 sep="_")
+
+geneDic <- archr_conns@metadata$geneSet$name
+
+archr_conns_updated <- data.frame(matrix(nrow = nrow(archr_conns),
+                                         ncol = 3))
+archr_conns_updated$X1 <- unlist(mapvalues(archr_conns$idxATAC, 1:length(peakDic), to = peakDic, warn_missing = F))
+archr_conns_updated$X2 <- unlist(mapvalues(archr_conns$idxRNA, 1:length(geneDic), to = geneDic, warn_missing = F))
+archr_conns_updated$X3 <- archr_conns$Correlation
+colnames(archr_conns_updated) <- c('peak', 'gene', 'corr')
+
+enhancers <- unique(archr_conns_updated$peak)
+length(enhancers)
+
+saveRDS(archr_conns_updated, paste0(out.dir, 'links_peak_gene_corr.rds'))
+```
+
+# prepare peak tf link
+
+```{r}
+############# enhancer tf annotation ################
+matches <- readRDS(proj@peakAnnotation$Motif$Matches)
+matches.mtx <- matches@assays@data$matches
+rownames(matches.mtx) <- paste(matches@rowRanges@seqnames,
+                               start(matches@rowRanges@ranges),
+                               end(matches@rowRanges@ranges),
+                               sep="_")
+
+peak_tf_mtx <- matches.mtx[enhancers,]
+colnames(peak_tf_mtx) %<>% 
+  strsplit(., split = '_', fixed=T) %>%
+  sapply(.,`[[`,1)
+
+peak_tf_df <- as.data.frame(peak_tf_mtx)
+peak_tf_df <- peak_tf_df %>%
+  mutate(across(everything(), ~ ifelse(.x == TRUE, 1.0, 0.0))) 
+
+saveRDS(peak_tf_df, paste0(out.dir, 'enhancers_TF_annotation.rds'))
+```

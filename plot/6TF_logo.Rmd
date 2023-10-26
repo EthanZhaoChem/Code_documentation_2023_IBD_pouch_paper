@@ -1,0 +1,165 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(ArchR)
+library(parallel)
+library(BSgenome.Hsapiens.UCSC.hg38)
+library(ggseqlogo)
+library(seqLogo)
+library(motifStack)
+library(ade4)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('~/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+source('~/yuzhao1/work/manu/rc2/scripts/rna_deg_markers.R')
+source('~/yuzhao1/scripts/helper_archr.R')
+source('~/yuzhao1/work/manu/rc2/scripts/tfs.R')
+
+```
+
+### prepare data 
+
+```{r}
+out.dir <- '/project/gca/yuzhao1/work/manu/rc2/plots/6tf_logo/'
+
+df_tfs_enrichedContrasts <- readRDS(paste0('/project/gca/yuzhao1/work/final_RC2atac/peaks/7motif_finalization/', 'df_finalized_enriched_motifs.rds'))
+tf_genes <- tf_genes_refined
+tf_genes <- tf_genes_negative
+
+```
+
+```{r}
+# reduce redundancy with cisbp logos
+pwms <- chromVARmotifs::human_pwms_v2
+# have checked all pseudo counts are zeros
+pfms <- list()
+for (i in 1:length(pwms)){
+  pwm <- pwms[[i]]
+  TF.name <- pwm@name
+  pfm <- exp(pwm@profileMatrix)*0.25 
+  pfms[[TF.name]] <- pfm
+}
+
+```
+
+```{r}
+# simple plot
+motifs<-pfms[tf_genes ]
+motifs <- mapply(names(motifs), 
+               motifs, 
+               FUN=function(.ele, .pfm){new("pfm",mat=.pfm, name=.ele)},
+               SIMPLIFY = FALSE)
+pdf(paste0(out.dir, 'singleTF_combined_negativeTFs.pdf'), width = 10, height = 3)
+plot_list <- list()
+for (kk in motifs){
+  plot_list[[length(plot_list) + 1]] <- plotMotifLogo(pfm = kk)
+}
+plot_list
+# do.call(grid.arrange, c(plot_list, ncol = 3))
+dev.off()
+```
+
+
+
+```{r}
+# stack plot
+motifs<-pfms[tf_genes ]
+motifs <- mapply(names(motifs), 
+               motifs, 
+               FUN=function(.ele, .pfm){new("pfm",mat=.pfm, name=.ele)},
+               SIMPLIFY = FALSE)
+## plot stacks
+pdf(paste0(out.dir,'stack.pdf'), width = 5, height = 25)
+motifStack(motifs, layout="tree")
+dev.off()
+```
+
+```{r}
+hc <- clusterMotifs(motifs)
+## convert the hclust to phylog object
+phylog <- ade4::hclust2phylog(hc)
+## reorder the pfms by the order of hclust
+leaves <- names(phylog$leaves)
+motifs <- motifs[leaves]
+## extract the motif signatures
+motifSig <- motifSignature(motifs, phylog, cutoffPval=0.05, min.freq=1)
+
+## get the signatures from object of motifSignature
+sig <- signatures(motifSig)
+## set the inner-circle color for each signature
+gpCol <- sigColor(motifSig)
+
+library(RColorBrewer)
+color <- brewer.pal(8, 'Paired')
+col.leaves <- color[sample(1:8, 113, replace = T)]
+
+
+
+## plot the logo stack with heatmap.
+tfs_chromvar <- readRDS('~/yuzhao1/work/manu/rc2/plots/6tf_chromVAR/TF_chromVAR_scaledZscore_EC.rds')
+rownames(tfs_chromvar) <- rownames(tfs_chromvar) %>%
+  strsplit(split = '_', fixed=T) %>%
+  sapply(.,`[[`,1)
+
+sub_tfs_chromvar <- tfs_chromvar[leaves,] %>% as.data.frame()
+
+map2col <- function(x, pal){
+  rg <- range(x)
+  pal[findInterval(x, seq(rg[1], rg[2], length.out = length(pal)+1), 
+                   all.inside = TRUE)]
+}
+dl <- lapply(sub_tfs_chromvar, map2col, 
+             pal=rc2_rna_heatmap_colors_gradient1)
+
+
+## alignment of the pfms, this step will make the motif logos occupy 
+## more space. Users can skip this alignment to see the difference.
+pfmsAligned <- DNAmotifAlignment(motifs)
+## plot motifs
+pdf(paste0(out.dir, 'tile.pdf'), width = 10, height = 20)
+motifPiles(phylog=phylog, 
+           pfms=pfmsAligned, 
+            col.tree=col.leaves,
+            col.leaves=col.leaves,
+            col.pfms2=gpCol, 
+            r.anno=rep(0.05, length(dl)), 
+            col.anno=dl,
+            motifScale="logarithmic",
+            plotIndex=TRUE,
+            groupDistance=10)
+dev.off()
+```
+
+```{r}
+motifs <- pfms
+motifs <- mapply(names(motifs), 
+               motifs, 
+               FUN=function(.ele, .pfm){new("pfm",mat=.pfm, name=.ele)},
+               SIMPLIFY = FALSE)
+
+pdf(paste0(out.dir, 'singleTF.pdf'), width = 10, height = 3)
+for (kk in motifs){
+  print(motifStack::plot(kk))
+}
+dev.off()
+```
+
+
+
+
+
+

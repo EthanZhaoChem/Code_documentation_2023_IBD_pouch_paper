@@ -1,0 +1,181 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(ArchR)
+library(parallel)
+library(BSgenome.Hsapiens.UCSC.hg38)
+library(VennDiagram)
+library(factoextra)
+library(cluster)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('~/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+source('~/yuzhao1/work/manu/rc2/scripts/rna_deg_markers.R')
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/tfs.R')
+source('~/yuzhao1/work/manu/rc2/scripts/helper_p2gHeatmap.R')
+```
+
+```{r}
+out.dir <- '/project/gca/yuzhao1/work/manu/rc2/plots/8atac_p2g_link/'
+```
+
+
+```{r, include = F, eval=F}
+proj <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_epithelial_filtered2_EC/")
+```
+
+
+```{r, include = F, eval=F}
+# pks.mtx.s4 <- readRDS(paste0(proj@projectMetadata$outputDirectory, '/peak_matrix_unbinarized.rds')) 
+```
+
+```{r}
+labels <- unique(c('DMBT1',  'MUC2', 'OLFM4',  'LCN2', 'SATB2',
+            'ADH1C', 'SATB2', 'CEACAM7', 'CA2', 'AQP8', 'HES1', 'NXPE4', 'HMGCS2',
+            'RPSA', 'CFTR', 'RPL11', 'CEACAM5', 'SOX9', 'MECOM', 'TFCP2L1', 'CD24','FCGBP',
+            'GSTA1', 'ACE2', 'RBP2', 'APOA4', 'FABP6', 'HLA−DRA','ABCC2', 'ENPEP',
+            "REG1B", "FOXD1", "GATA5", "KLF7", "REG4", "IRF8", 
+            "STAT6", "STAT5", "SATB1", 
+            "HOXB7","MT1A", "KLF11" ,"MT1A", "ABCB9",
+            "REG3A","TUBA1B", 
+            "FABP1", "KRT20","ZBTB7B",
+            "DEFA6", "DEFA5", "CLCA1", "TFF1", 'ATOH1', tf_genes
+            ))
+```
+
+
+
+```{r}
+ccd <- getCellColData(proj, select = c("anno1"))
+p2g <- metadata(proj@peakSet)$Peak2GeneLinks
+p2g <- p2g[which(p2g$Correlation >= 0.6 & p2g$FDR <= 1e-04 & p2g$VarQATAC >=0.25 & p2g$VarQRNA >=0.25), ,drop=FALSE]
+k <- 10
+limitsATAC = c(-2, 2)
+limitsRNA = c(-2, 2)
+palRNA = paletteContinuous("solarExtra")
+palATAC = paletteContinuous("blueYellow")
+```
+
+```{r}
+mATAC <- readRDS(metadata(p2g)$seATAC)[p2g$idxATAC, ]
+mRNA <- readRDS(metadata(p2g)$seRNA)[p2g$idxRNA, ]
+p2g$peak <- paste0(rowRanges(mATAC))
+p2g$gene <- rowData(mRNA)$name
+gc()
+mATAC <- assay(mATAC)
+mRNA <- assay(mRNA)
+```
+
+```{r}
+KNNList <- as(metadata(readRDS(metadata(p2g)$seRNA))$KNNList, "list")
+KNNGroups <- lapply(seq_along(KNNList), function(x){
+  KNNx <- KNNList[[x]]
+  names(sort(table(ccd[KNNx, 1, drop = TRUE]), decreasing = TRUE))[1]
+}) %>% unlist
+
+cD <- DataFrame(row.names=paste0("K_", seq_len(ncol(mATAC))), groupBy = KNNGroups)
+pal <- c("EC1-1" = '#9ecae1',
+         "EC1-2" = '#4292c6',
+         "EC2-1" = '#80cdc1',
+         "EC2-2" = '#35978f')
+
+colorMap <- list(groupBy = pal)
+attr(colorMap[[1]], "discrete") <- TRUE
+```
+
+```{r}
+mATAC <- t(scale(t(mATAC)))
+mRNA <- t(scale(t(mRNA)))
+```
+
+```{r}
+rownames(mATAC) <- NULL
+rownames(mRNA) <- NULL
+colnames(mATAC) <- paste0("K_", seq_len(ncol(mATAC)))
+colnames(mRNA) <- paste0("K_", seq_len(ncol(mRNA)))
+rownames(mATAC) <- paste0("P2G_", seq_len(nrow(mATAC)))
+rownames(mRNA) <- paste0("P2G_", seq_len(nrow(mRNA)))
+rownames(p2g) <- paste0("P2G_", seq_len(nrow(p2g)))
+
+k1 <- kmeans(mATAC, k)
+kDF <- DataFrame(k = k1$cluster, idx = seq_len(nrow(mATAC)))
+
+
+preferred_colOrder_levels <- c("EC1-1", "EC2-1","EC1-2", "EC2-2")
+rowOrder <- as.character(1:k)
+colOrder <- rownames(cD)[order(match(cD$groupBy, preferred_colOrder_levels), decreasing = F)]
+
+kDF[,3] <- as.integer(mapLabels(paste0(kDF[,1]), newLabels = paste0(seq_along(rowOrder)), oldLabels = rowOrder))
+```
+
+
+```{r}
+htATAC <- .ArchRHeatmap(
+    mat = mATAC[kDF[,2],colOrder],
+    scale = FALSE,
+    limits = limitsATAC,
+    color = palATAC, 
+    colData = cD[colOrder,,drop=FALSE],
+    colorMap = colorMap,
+    clusterCols = FALSE,
+    clusterRows = FALSE,
+    split = kDF[,3],
+    labelRows = FALSE,
+    labelCols = FALSE,
+    draw = FALSE,
+    name = paste0("ATAC Z-Scores\n", nrow(mATAC), " P2GLinks")
+  )
+
+htRNA <- .ArchRHeatmap(
+    mat = mRNA[kDF[,2],colOrder], 
+    scale = FALSE,
+    limits = limitsRNA,
+    color = palRNA, 
+    colData = cD[colOrder,,drop=FALSE],
+    colorMap = colorMap,
+    clusterCols = FALSE,
+    clusterRows = FALSE,
+    split = kDF[,3],
+    labelRows = FALSE,
+    labelCols = FALSE,
+    draw = FALSE,
+    name = paste0("RNA Z-Scores\n", nrow(mRNA), " P2GLinks")
+  )
+
+
+```
+
+
+```{r}
+pdf(paste0(out.dir, 'p2g_archr_ATAC',  '.pdf'), width = 5, height = 6)
+print(htATAC)
+dev.off()
+
+pdf(paste0(out.dir, 'p2g_archr_RNA',  '.pdf'), width = 5, height = 6)
+print(htRNA)
+dev.off()
+```
+
+
+
+
+
+
+
+
+
+

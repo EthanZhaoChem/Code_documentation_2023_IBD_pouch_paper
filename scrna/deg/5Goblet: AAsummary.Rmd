@@ -1,0 +1,89 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(limma)
+library(edgeR)
+library(variancePartition)
+library(BiocParallel)
+library(tidyverse)
+source('~/yuzhao1/scripts/plot.R')
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+source('/project/gca/yuzhao1/scripts/seurat/deg_pseudobulk.R')
+```
+
+
+```{r, include = F, eval=F}
+epithelial <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/epithelial3.rds')
+```
+
+```{r}
+out.dir <- '~/yuzhao1/work/final_RC2rna/deg/epithelial/goblet/'
+```
+
+```{r}
+genes.goblet <- list() 
+```
+
+### 1. summaries
+
+```{r}
+seurat <- subset(epithelial, cells = Cells(epithelial)[epithelial$anno1 %in% c('Goblet1', 'Goblet2')])
+seurat$anno1[seurat$anno1 %in% c('Goblet1') & seurat$biopsy_location =='POU'] <- 'Goblet-POU1'
+seurat$anno1[seurat$anno1 %in% c('Goblet2') & seurat$biopsy_location =='POU'] <- 'Goblet-POU2'
+seurat$anno1[seurat$anno1 %in% c('Goblet1') & seurat$biopsy_location =='PP'] <- 'Goblet-PP'
+seurat$anno1[seurat$anno1 %in% c('Goblet2') & seurat$biopsy_location =='PP'] <- 'Goblet-PP'
+seurat$anno1[seurat$anno1 %in% c('Goblet1', 'Goblet2') & seurat$biopsy_location =='TI'] <- 'Goblet-TI'
+seurat$anno1[seurat$anno1 %in% c('Goblet1', 'Goblet2') & seurat$biopsy_location =='AC'] <- 'Goblet-AC'
+expression.mean <- rowMeans(seurat@assays$RNA@data)
+genes.above0.01 <- names(expression.mean)[expression.mean > 0.01]
+genes.above0.05 <- names(expression.mean)[expression.mean > 0.05]
+```
+
+```{r}
+de_results <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/goblet/de_results_TIvsAC_bulk.rds')
+
+# prepare for enrichment (p<0.05)
+fclist <- topTable(
+  de_results[["Goblet"]],
+  coef="anno1.subTI_Goblet-TI",
+  p.value = 0.05,
+  sort.by = 'logFC',
+  number = 10000
+)
+
+fclist$gene <- rownames(fclist)
+
+genes.TIvsAC <- rownames(fclist)[fclist$logFC > 1]
+genes.ACvsTI <- rownames(fclist)[fclist$logFC < -1]
+
+genes.goblet[['TIvsAC']] <- genes.TIvsAC %>% intersect(., genes.above0.01) 
+genes.goblet[['ACvsTI']] <- genes.ACvsTI %>% intersect(., genes.above0.01)
+
+```
+
+```{r}
+saveRDS(genes.goblet, '~/yuzhao1/work/manu/rc2/plots/2rna_deg/goblet/genes_goblet.rds')
+```
+
+
+
+
+
+
+
+
+
+
+
