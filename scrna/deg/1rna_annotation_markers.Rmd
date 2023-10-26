@@ -1,0 +1,241 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+out.dir <- '/project/gca/yuzhao1/work/manu/rc2/plots/1rna_annotation_markers'
+```
+
+```{r, include = F, eval=F}
+union <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/gut_filtered.rds')
+epithelial <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/epithelial3.rds')
+immune <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/immune3.rds')
+tcell <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/tcell2.rds')
+bcell <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/bcell3.rds')
+myeloid <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/myeloid3.rds')
+others <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/others3.rds')
+```
+
+### All cells
+
+```{r}
+seurat <- union
+markers.dir <- '/project/gca/yuzhao1/work/final_RC2rna/deg/union/0annotation_lineages/'
+unique(seurat$lineage)
+
+seurat$lineage[seurat$anno1 %in% c('IgA plasma', 'IgG plasma')] <- 'plasma cell'
+```
+
+```{r}
+View(readRDS(paste0(markers.dir, "epithelial", '.rds')))
+```
+
+```{r, fig.height = 7, fig.width = 7}
+feature <- 'PECAM1'
+df <- data.frame(seurat@meta.data)
+df$embedding1 <- data.frame(seurat@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(seurat@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$feature_to_plot <- FetchData(seurat, feature) %>% unlist()
+plot_df_umap_custom(df, plot_feature = T)
+
+VlnPlot(seurat, feature, group.by = 'lineage', pt.size = 0)
+```
+
+```{r}
+source('~/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+seurat$lineage <- factor(seurat$lineage, levels = c("epithelial", "tcell", "bcell", "plasma cell", "myeloid", "others"))
+pdf(paste0('/project/gca/yuzhao1/work/final_RC2rna/deg/union/0annotation_lineage.pdf'), width = 5, height = 10, pointsize = 1)
+plot_seurat_dot_custom(seurat, group = 'lineage', features = rna.lineage.markers )
+dev.off()
+```
+
+
+### Epithelial cells
+
+```{r}
+seurat <- epithelial
+markers.dir <- '/project/gca/yuzhao1/work/final_RC2rna/deg/epithelial/1anno1/'
+unique(seurat$anno1)
+
+```
+
+```{r}
+View(readRDS(paste0(markers.dir, "Tuft", '.rds')))
+```
+
+```{r, fig.height = 7, fig.width = 7}
+feature <- 'ITPR2'
+df <- data.frame(seurat@meta.data)
+df$embedding1 <- data.frame(seurat@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(seurat@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$feature_to_plot <- FetchData(seurat, feature) %>% unlist()
+plot_df_umap_custom(df, plot_feature = T)
+
+VlnPlot(seurat, feature, group.by = 'anno1', pt.size = 0)
+```
+
+```{r}
+source('~/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+seurat$anno1 <- factor(seurat$anno1,
+                       levels = c("Stem", "TA", "EC1-1", "EC1-2", "EC2-1", "EC2-2", "Goblet1",
+                                  "Goblet2", "M-like", "BEST4", "Paneth", "EEC", "Tuft"))
+pdf(paste0('/project/gca/yuzhao1/work/final_RC2rna/deg/epithelial/1anno1.pdf'), width = 5, height = 10, pointsize = 1)
+plot_seurat_dot_custom(seurat, group = 'anno1', features = rna.epithelial.markers )
+dev.off()
+```
+
+### T cells
+
+```{r}
+seurat <- tcell
+markers.dir <- '/project/gca/yuzhao1/work/final_RC2rna/deg/tcell/1anno1/'
+unique(seurat$anno1)
+```
+
+```{r}
+View(readRDS(paste0(markers.dir, "Tuft", '.rds')))
+```
+
+```{r, fig.height = 7, fig.width = 7}
+feature <- 'IL7R'
+df <- data.frame(seurat@meta.data)
+df$embedding1 <- data.frame(seurat@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(seurat@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$feature_to_plot <- FetchData(seurat, feature) %>% unlist()
+plot_df_umap_custom(df, plot_feature = T)
+
+VlnPlot(seurat, feature, group.by = 'anno1', pt.size = 0)
+```
+
+```{r}
+source('~/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+seurat$anno1 <- factor(seurat$anno1,
+                       levels = c("CD4 Tcm" , "Treg", "CD103- CD4 Trm", "CD103+ CD4 Trm", 
+                                  "CD103+ CD8 Trm", "KLRG1+ CD8 Trm", "gdT", 
+                                  "MAIT", "NK T", "NK", "ILCs" ))
+pdf(paste0('/project/gca/yuzhao1/work/final_RC2rna/deg/tcell/1anno1.pdf'), width = 5, height = 10, pointsize = 1)
+plot_seurat_dot_custom(seurat, group = 'anno1', features = rna.tcell.markers )
+dev.off()
+```
+
+### B cells
+
+```{r}
+seurat <- bcell
+markers.dir <- '/project/gca/yuzhao1/work/final_RC2rna/deg/bcell/1anno1/'
+unique(seurat$anno1)
+```
+
+```{r}
+View(readRDS(paste0(markers.dir, "Memory B", '.rds')))
+```
+
+```{r, fig.height = 7, fig.width = 7}
+feature <- 'LTB'
+df <- data.frame(seurat@meta.data)
+df$embedding1 <- data.frame(seurat@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(seurat@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$feature_to_plot <- FetchData(seurat, feature) %>% unlist()
+plot_df_umap_custom(df, plot_feature = T)
+
+VlnPlot(seurat, feature, group.by = 'anno1', pt.size = 0)
+```
+
+```{r}
+source('~/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+seurat$anno1 <- factor(seurat$anno1,
+                       levels = c("GC B", "Naive B", "Memory B", "IgA plasma", "IgG plasma"))
+pdf(paste0('/project/gca/yuzhao1/work/final_RC2rna/deg/bcell/1anno1.pdf'), width = 4, height = 6, pointsize = 1)
+plot_seurat_dot_custom(seurat, group = 'anno1', features = rna.bcell.markers )
+dev.off()
+```
+
+
+### Myeloid cells
+
+```{r}
+seurat <- myeloid
+markers.dir <- '/project/gca/yuzhao1/work/final_RC2rna/deg/myeloid/1anno1/'
+unique(seurat$anno1)
+```
+
+```{r}
+View(readRDS(paste0(markers.dir, "cDC2", '.rds')))
+```
+
+```{r, fig.height = 7, fig.width = 7}
+feature <- 'AUTS2'
+df <- data.frame(seurat@meta.data)
+df$embedding1 <- data.frame(seurat@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(seurat@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$feature_to_plot <- FetchData(seurat, feature) %>% unlist()
+plot_df_umap_custom(df, plot_feature = T)
+
+VlnPlot(seurat, feature, group.by = 'anno1', pt.size = 0)
+```
+
+```{r}
+source('~/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+seurat$anno1 <- factor(seurat$anno1,
+                       levels = c("Monocyte", "Macrophage", "cDC1", "cDC2", "Lymphoid DC", "Mast", "Neutrophil"))
+pdf(paste0('/project/gca/yuzhao1/work/final_RC2rna/deg/myeloid/1anno1.pdf'), width = 5, height = 7, pointsize = 1)
+plot_seurat_dot_custom(seurat, group = 'anno1', features = rna.myeloid.markers )
+dev.off()
+```
+
+### others cells
+
+```{r}
+seurat <- others
+markers.dir <- '/project/gca/yuzhao1/work/final_RC2rna/deg/others/1anno1/'
+unique(seurat$anno1)
+```
+
+```{r}
+View(readRDS(paste0(markers.dir, "Stromal-3", '.rds')))
+```
+
+```{r, fig.height = 7, fig.width = 7}
+feature <- 'MMP1'
+df <- data.frame(seurat@meta.data)
+df$embedding1 <- data.frame(seurat@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(seurat@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$feature_to_plot <- FetchData(seurat, feature) %>% unlist()
+plot_df_umap_custom(df, plot_feature = T)
+
+VlnPlot(seurat, feature, group.by = 'anno1', pt.size = 0)
+```
+
+```{r}
+source('~/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+seurat$anno1 <- factor(seurat$anno1,
+                       levels = c("Stromal-1", "Stromal-2", "Stromal-3", "Myofibroblast", "Arterial", "Venous", "Pericyte", 
+                                  "Contractile pericyte" , "Smooth muscle", "Lymphatic endothelium" , "Glial" ))
+pdf(paste0('/project/gca/yuzhao1/work/final_RC2rna/deg/others/1anno1.pdf'), width = 6, height = 10, pointsize = 1)
+plot_seurat_dot_custom(seurat, group = 'anno1', features = rna.others.markers )
+dev.off()
+```
+
+
+
+
+
+
+
+
+
+

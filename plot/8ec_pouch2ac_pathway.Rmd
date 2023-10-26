@@ -1,0 +1,258 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(ArchR)
+library(parallel)
+library(BSgenome.Hsapiens.UCSC.hg38)
+library(ComplexHeatmap)
+
+library(msigdbr)
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(GSEABase)
+
+source('~/yuzhao1/scripts/plot.R')
+source('~/yuzhao1/work/manu/rc2/scripts/helper_seurat.R')
+source('~/yuzhao1/scripts/seurat/deg_pseudobulk.R')
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('~/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+source('~/yuzhao1/work/manu/rc2/scripts/rna_deg_markers.R')
+source('~/yuzhao1/scripts/helper_archr.R')
+source('~/yuzhao1/work/manu/rc2/scripts/tfs.R')
+```
+
+```{r, include = F, eval=F}
+union <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/gut_filtered.rds')
+seurat <- subset(union, cells = Cells(union)[union$anno1 %in% c('EC1-1', 'EC1-2', "EC2-1", "EC2-2")])
+seurat$anno1_loc <- factor(seurat$anno1_loc, levels = c('EC-AC', 'EC-POU2', 'EC-POU1', 'EC-PP', 'EC-TI'))
+out.dir <- '~/yuzhao1/work/manu/rc2/plots/8ec_pouch2ac_pathway/'
+msigdb.human <- readRDS('/project/gca/yuzhao1/resource/msigdb/msigdb.human.rds')
+
+```
+
+
+### 1, prepare gene sets
+
+```{r}
+genesets <- list()
+pathway_names <- c('GOBP_ANTIMICROBIAL_HUMORAL_RESPONSE',
+                  'GOBP_CELLULAR_LIPID_CATABOLIC_PROCESS',
+                  'KEGG_OXIDATIVE_PHOSPHORYLATION',
+                  'REACTOME_METABOLISM_OF_LIPIDS',
+                  'REACTOME_METABOLISM_OF_FAT_SOLUBLE_VITAMINS',
+                  'KEGG_CELL_ADHESION_MOLECULES_CAMS',
+                  'KEGG_STEROID_HORMONE_BIOSYNTHESIS',
+                  'KEGG_INTESTINAL_IMMUNE_NETWORK_FOR_IGA_PRODUCTION',
+                  'HALLMARK_MYC_TARGETS_V1',
+                  'HALLMARK_MYC_TARGETS_V2',
+                  'HALLMARK_INTERFERON_GAMMA_RESPONSE',
+                  'HALLMARK_IL2_STAT5_SIGNALING',
+                  'HALLMARK_BILE_ACID_METABOLISM',
+                  'REACTOME_HEDGEHOG_LIGAND_BIOGENESIS',
+                  'GOBP_HUMORAL_IMMUNE_RESPONSE',
+                  'GOBP_ANTIMICROBIAL_HUMORAL_RESPONSE',
+                  'GOBP_DEFENSE_RESPONSE_TO_BACTERIUM',
+                  'DESCARTES_FETAL_INTESTINE_INTESTINAL_EPITHELIAL_CELLS',
+                  'HALLMARK_INFLAMMATORY_RESPONSE')
+# pathway_names <- inflammation_pathways
+
+for(pathway_name in pathway_names){
+  genesets[[pathway_name]] <- msigdb.human[msigdb.human $gs_name %in% c(pathway_name), ]$gene_symbol
+}
+```
+
+```{r}
+# EC modules
+# get inflammation and healthy module from pouch EC2 vs AC
+de_results  <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/pseudobulk/de_results_pou2vsAC_bulk.rds')
+
+fclist <- topTable(
+  de_results[["EC"]],
+  coef = "anno1.subPOU_EC-POU2",
+  p.value = 1000000,
+  sort.by = 'logFC',
+  number = 30000
+)
+
+df <- fclist[, c('logFC', 'adj.P.Val')]
+colnames(df) <- c('logFC', 'p_val_adj')
+
+genes_pouch_ec2 <- rownames(df[df$p_val_adj<0.05 & df$logFC > 1, ])
+genes_ac_ec <- rownames(df[df$p_val_adj<0.05 & df$logFC < -1, ])
+
+# to help rank by logFC inside each chunk
+df_ec_logFC_ref <- df[c(genes_pouch_ec2, genes_ac_ec), ]
+```
+
+```{r}
+# extra annotation: genes in AC vs TI
+markers <- readRDS('~/yuzhao1/work/final_RC2rna/deg/epithelial/ec/markers_filtered_logFC1_p0.05.rds')
+temp <- markers[["TIvsAC"]]
+refgene_TIvsAC <- rownames(temp)[temp[['logFC']] > 1]
+refgene_ACvsTI <- rownames(temp)[temp[['logFC']] < -1]
+```
+
+### 2, plot EC
+```{r}
+for (pathway_name in names(genesets)){
+  genes_to_plot <- intersect(c(genes_ac_ec, genes_pouch_ec2),
+                                  c(genesets[[pathway_name]]))
+  cat(genes_to_plot)
+  }
+```
+
+```{r}
+# specify the following parameters for a beautiful heatmap
+for (pathway_name in names(genesets)){
+  genes_to_plot <- intersect(c(genes_ac_ec, genes_pouch_ec2),
+                                  c(genesets[[pathway_name]]))
+  if(length(genes_to_plot) < 1){
+    next
+  }
+  plot_suffix <- pathway_name
+  figure_width <- 6
+  figure_height <- 2 + 0.3 * length(genes_to_plot)
+  barwidth1 <- 5
+  barwidth2 <- 5
+  plot_font_size <- 8
+  
+  # split genes in to 8 blocks by three standard(pouchEC2 vs AC, Smillie, TI vs AC)
+  df <- as.data.frame(matrix(nrow = length(genes_to_plot),
+                             data = 0,
+                             ncol = 2))
+  colnames(df) <- c('pouchEC2vsAC', 'TIvsAC')
+  rownames(df) <- genes_to_plot
+  
+  # up-regulated in pouch (1) or down-regulated (0)
+  df[intersect(genes_pouch_ec2, rownames(df)), 'pouchEC2vsAC'] <- 1
+  df[intersect(genes_ac_ec, rownames(df)), 'pouchEC2vsAC'] <- 2
+  
+  # shared with TI vs AC degs
+  df[intersect(refgene_TIvsAC, rownames(df)), 'TIvsAC'] <- 1 
+  df[intersect(refgene_ACvsTI, rownames(df)), 'TIvsAC'] <- 2
+  
+  # logFC in pouchEC2 vs AC
+  df$pouch2vsAC_logFC <- df_ec_logFC_ref[rownames(df), 'logFC']
+  
+  # categorize
+  df$levels <- paste0(df[,1], df[,2])
+  
+  ec.levels = c('11','12','10','21','22','20')
+  ec.levels <- ec.levels[ec.levels %in% unique(df$levels)]
+  
+  df$levels <- factor(df$levels, levels = ec.levels)
+  # sort inside each category
+  df <- df[order(df[,'levels'], -df[,'pouch2vsAC_logFC']), ]
+  
+  ########################################################################
+  # seurat
+  #  EC-POU1-OR43 = 111 cells, EC-POU2-OR43 = 42 cells
+  seurat$anno1 <- seurat$anno1_loc
+  seurat <- subset(seurat, cells = Cells(seurat)[seurat$anno1_loc%in%c('EC-AC', 'EC-POU2')])
+  seurat$anno1_patient <- paste0(seurat$anno1, '-', seurat$Patient_ID)
+  patients_control <- grep('HA', unique(seurat$Patient_ID), value = T)
+  patients_uc <- c("OR109",  "OR48",  "OR102", "OR101", "OR43",  "OR72")
+  seurat$anno1_patient <- factor(seurat$anno1_patient, levels = c(paste0('EC-AC', '-', patients_control),
+                                                                  paste0('EC-POU2', '-', patients_uc)))
+  # seurat.sub <- subset(seurat, anno1_patient!='EC-POU2-OR43')
+  seurat.sub <- seurat
+  
+  ########################################################################
+  # plot
+  # the df was prepared in first chunk in this section
+  
+  Average.expression.mtx <- AverageExpression(
+    seurat.sub,
+    assays = 'RNA',
+    features = rownames(df),
+    return.seurat = FALSE,
+    group.by = "anno1_patient",
+    add.ident = NULL,
+    slot = "data",
+    verbose = TRUE
+  )
+  Average.expression.mtx <- Average.expression.mtx$RNA %>% t(.) %>% scale(.) %>% t(.)
+  Average.expression.mtx <- Average.expression.mtx[, c('EC-AC-HA01', 'EC-AC-HA02', 'EC-AC-HA04',
+                                                       'EC-AC-HA50', 'EC-AC-HA51', 'EC-AC-HA55', 
+                                                       'EC-POU2-OR48', 'EC-POU2-OR101',  'EC-POU2-OR102',
+                                                       'EC-POU2-OR109', 'EC-POU2-OR43', 'EC-POU2-OR72')]
+  
+  
+  # filter again to show in labels of heatmap
+  labels <- rownames(df)
+  # labels <- genes.show
+  labels.idx <- match(labels, rownames(Average.expression.mtx))
+  
+  col2 <- c('0' = '#ffffe5', '1' = '#4292c6', '2' = '#35978f') # shared with smillie inflammed(1), healthy (2)
+  col3 <- c('0' = '#ffffe5', '1' = '#4292c6', '2' = '#35978f') # region ti (1) ac (2), other (0)
+  anno1 <- rowAnnotation(
+    bar2 = anno_block(gp = gpar(fill = col2[levels(df$levels) %>% substr(., 1, 1)]),
+                      width = unit(barwidth1, "mm")),
+    bar3 = anno_block(gp = gpar(fill = col3[levels(df$levels) %>% substr(., 2, 2)]),
+                      width = unit(barwidth2, "mm")),
+    gp = gpar(col = "black")
+  )
+  
+  pdf(paste0(out.dir, plot_suffix, '.pdf'), width = figure_width, height = figure_height)
+  p1 <- Heatmap(Average.expression.mtx, col = rc2_rna_heatmap_colors_gradient1,
+                cluster_columns = F, cluster_rows = F,
+                column_title = pathway_name,
+                column_title_gp = gpar(fontsize = 8, fontface = "bold"),
+                show_row_dend = F, show_column_dend = F, show_row_names = F,
+                row_split = df$levels,
+                row_title = NULL,
+                row_gap = unit(1, "mm"), 
+                column_gap = unit(0, "mm"), 
+                border = T,
+                rect_gp = gpar(col = "white", lwd = 2), # element border in each rect chunk
+                border_gp = gpar(col = "black", lty = 1, lwd = 1), # chunk border
+                
+                heatmap_legend_param = list(title = "Mean expression z score"),
+                use_raster = F,
+                right_annotation = anno1)+
+    rowAnnotation(link = anno_mark(at = labels.idx, labels = labels, 
+                                   labels_gp = gpar(col = "black", fontsize = plot_font_size)), 
+                  width = unit(0.1, "cm") + 
+                  max_text_width(labels))
+  
+  print(p1)
+  dev.off()
+}
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

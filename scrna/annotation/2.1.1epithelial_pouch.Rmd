@@ -1,0 +1,212 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+knitr::opts_knit$set(root.dir = '/home/yuzhao1/gca/yuzhao1/work/gca_rna/')
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+
+```{r, eval=F}
+# save epithelial2 again after second round of processing
+epithelial <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/epithelial2.rds')
+cells_pouch <- Cells(epithelial)[which(epithelial$biopsy_location =='POU')]
+```
+
+```{r}
+cells.pouch <- subset(epithelial, cells = cells_pouch)
+```
+
+
+### workflow
+
+
+```{r, include = F, eval=F}
+cells.pouch <- NormalizeData(cells.pouch)
+cells.pouch <- FindVariableFeatures(cells.pouch, selection.method = "vst", nfeatures = 2000)
+cells.pouch <- ScaleData(cells.pouch, vars.to.regress = c('percent.mt', 'nCount_RNA', 'CC.Difference'))
+cells.pouch <- RunPCA(cells.pouch, npcs = 50)
+cells.pouch <- RunHarmony(cells.pouch, group.by.vars = 'Patient_ID', max.iter.harmony = 20)
+
+# seed 5 look OK, 1 also makes sense
+cells.pouch <- RunUMAP(cells.pouch,  dims = 1:50, reduction = 'harmony', reduction.name = 'harmony_umap', 
+                      min.dist = 0.4, n.neighbors = 50, seed.use = 1,
+                      reduction.key = 'UMAP_')
+
+cells.pouch <- FindNeighbors(cells.pouch, reduction = 'harmony', dims = 1:50)
+
+cells.pouch <- FindClusters(cells.pouch, resolution = 0.5)
+cells.pouch$seurat_clusters_res0.5 <- Idents(cells.pouch)
+
+cells.pouch <- FindClusters(cells.pouch, resolution = 0.8)
+cells.pouch$seurat_clusters_res0.8 <- Idents(cells.pouch)
+
+cells.pouch <- FindClusters(cells.pouch, resolution = 1)
+cells.pouch$seurat_clusters_res1 <- Idents(cells.pouch)
+
+```
+
+```{r}
+xx <- list()
+
+require(foreach)
+max_iterations <- length(unique(epithelial$seurat_clusters_res0.5))
+opts <- list()
+pb <- txtProgressBar(min = 0, max = max_iterations, style = 3)
+progress <- function(n) setTxtProgressBar(pb, n)
+opts <- list(progress = progress)
+
+# set parallel backend
+nCores = 6
+cl <- parallel::makeCluster(nCores)
+doSNOW::registerDoSNOW(cl)
+getDoParWorkers()
+getDoParName()
+
+# do parallel computing
+foreach::foreach(cluster=as.character(0:18), .packages = c('patchwork', "dplyr", "Seurat"), 
+                 .options.snow = opts, .inorder = F) %dopar% {
+  dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+  xx[[cluster]] <- FindMarkers(epithelial, ident.1 = cluster, min.pct = 0.2, logfc.threshold = 0.5, group.by = 'seurat_clusters_res0.5')
+  saveRDS(xx[[cluster]], paste0('~/yuzhao1/work/final_RC2rna/annotation/markers/epithelial2_res0.5/epithelial_res0.5_', cluster, '.rds'))
+                 }
+
+parallel::stopCluster(cl)
+```
+
+```{r}
+cluster <- '13'
+View(readRDS(paste0('~/yuzhao1/work/final_RC2rna/annotation/markers/epithelial2_res0.5/epithelial_res0.5_', cluster, '.rds')))
+```
+
+
+### Check clustering results
+
+```{r}
+cells.pouch <- RunUMAP(cells.pouch,  dims = 1:50, reduction = 'harmony', reduction.name = 'harmony_umap', 
+                      min.dist = 0.4, n.neighbors = 50, seed.use = 1,
+                      reduction.key = 'UMAP_')
+```
+
+```{r, fig.height=8, fig.width=8.5}
+df <- data.frame(cells.pouch@meta.data)
+df$embedding1 <- data.frame(cells.pouch@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(cells.pouch@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$cluster_name <- cells.pouch$anno1
+plot_df_umap_custom(df, show.label = 'name')
+```
+
+
+
+```{r, fig.height=9, fig.width=8.5}
+df <- data.frame(cells.pouch@meta.data)
+df$embedding1 <- data.frame(cells.pouch@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(cells.pouch@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$cluster_name <- cells.pouch$seurat_clusters_res0.5
+plot_df_umap_custom(df, show.label = 'name')
+```
+
+
+```{r, fig.height=13, fig.width=12}
+df <- data.frame(cells.pouch@meta.data)
+df$embedding1 <- data.frame(cells.pouch@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(cells.pouch@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$cluster_name <- cells.pouch$seurat_clusters_res0.5
+plot_df_umap_custom(df, show.label = 'name') +
+  facet_wrap(~ biopsy_location) +
+  theme(
+    strip.background = element_rect(fill = "white", colour = "white"),
+    strip.text = element_text(size = 12)
+  )
+```
+
+
+
+
+#### Check specific markers
+
+```{r}
+feature <- 'SMOC2'
+df <- data.frame(cells.pouch@meta.data)
+df$embedding1 <- data.frame(cells.pouch@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(cells.pouch@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$feature_to_plot <- FetchData(cells.pouch, feature) %>% unlist()
+plot_df_umap_custom(df, plot_feature = T)
+```
+
+
+```{r, fig.width=10}
+VlnPlot(cells.pouch, 'MUC2', group.by = 'seurat_clusters_res0.5', pt.size = 0)
+```
+
+
+```{r}
+feature <- 'CEACAM5'
+df <- data.frame(cells.pouch@meta.data)
+df$embedding1 <- data.frame(cells.pouch@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(cells.pouch@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$feature_to_plot <- FetchData(cells.pouch, feature) %>% unlist()
+plot_df_umap_custom(df, plot_feature = T)
+```
+
+
+
+```{r}
+feature <- 'LGR5'
+df <- data.frame(cells.pouch@meta.data)
+df$embedding1 <- data.frame(cells.pouch@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(cells.pouch@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$feature_to_plot <- FetchData(cells.pouch, feature) %>% unlist()
+plot_df_umap_custom(df, plot_feature = T)
+```
+
+```{r}
+feature <- 'ADH1C'
+df <- data.frame(cells.pouch@meta.data)
+df$embedding1 <- data.frame(cells.pouch@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(cells.pouch@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$feature_to_plot <- FetchData(cells.pouch, feature) %>% unlist()
+plot_df_umap_custom(df, plot_feature = T)
+```
+
+```{r}
+feature <- 'APOA1'
+df <- data.frame(cells.pouch@meta.data)
+df$embedding1 <- data.frame(cells.pouch@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(cells.pouch@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$feature_to_plot <- FetchData(cells.pouch, feature) %>% unlist()
+plot_df_umap_custom(df, plot_feature = T)
+```
+
+```{r}
+feature <- 'CCL20'
+df <- data.frame(cells.pouch@meta.data)
+df$embedding1 <- data.frame(cells.pouch@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(cells.pouch@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$feature_to_plot <- FetchData(cells.pouch, feature) %>% unlist()
+plot_df_umap_custom(df, plot_feature = T)
+```
+
+```{r}
+    feature <- 'MMP1'
+df <- data.frame(cells.pouch@meta.data)
+df$embedding1 <- data.frame(cells.pouch@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(cells.pouch@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$feature_to_plot <- FetchData(cells.pouch, feature) %>% unlist()
+plot_df_umap_custom(df, plot_feature = T)
+```
+
+```{r, fig.width=10}
+VlnPlot(cells.pouch, 'ADH1C', group.by = 'seurat_clusters_res0.5', pt.size = 0)
+```

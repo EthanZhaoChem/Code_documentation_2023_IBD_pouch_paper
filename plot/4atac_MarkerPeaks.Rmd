@@ -1,0 +1,160 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(ArchR)
+library(parallel)
+library(BSgenome.Hsapiens.UCSC.hg38)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('~/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+```
+
+```{r, include = F, eval=F}
+proj_union <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_filtered/")
+proj_epithelial <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_epithelial_filtered2/")
+proj_tcell <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_tcell_filtered2/")
+proj_bcell <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_bcell_filtered/")
+proj_myeloid <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_myeloid_filtered2/")
+proj_others <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_others_filtered2/")
+```
+
+```{r}
+out.dir <- '~/yuzhao1/work/manu/rc2/plots/4atac_MarkerPeaks/'
+```
+
+### 1.five lineages 
+
+```{r}
+temp_lineage <- 'epithelial'  
+proj <- paste0('proj_', temp_lineage) %>% as.name(.) %>% eval(.)
+markersPeaks <- readRDS(paste0(proj@projectMetadata$outputDirectory, '/', 'MarkersPeaks_anno2_epithelial', '.rds'))
+
+heatmapPeaks <- plotMarkerHeatmap(
+  seMarker = markersPeaks,
+  cutOff = "FDR <= 0.01 & Log2FC >= 1",
+  plotLog2FC = F,
+  clusterCols = F,
+  transpose = TRUE,
+  nLabel = 0
+)
+
+pdf(paste0(out.dir, temp_lineage, '_markersPeaks', '.pdf'), width = 5, height = 5, pointsize = 1)
+draw(heatmapPeaks, heatmap_legend_side = "bot", annotation_legend_side = "bot",
+     row_order = names(custom_colors_atac_epithelial_anno2))
+dev.off()
+```
+
+```{r}
+temp_lineage <- 'tcell'  
+proj <- paste0('proj_', temp_lineage) %>% as.name(.) %>% eval(.)
+markersPeaks <- readRDS(paste0(proj@projectMetadata$outputDirectory, '/', 'MarkersPeaks_anno1', '.rds'))
+
+heatmapPeaks <- plotMarkerHeatmap(
+  seMarker = markersPeaks,
+  cutOff = "FDR <= 0.01 & Log2FC >= 1",
+  plotLog2FC = F,
+  clusterCols = F,
+  transpose = TRUE,
+  nLabel = 0
+)
+
+pdf(paste0(out.dir, temp_lineage, '_markersPeaks', '.pdf'), width = 5, height = 5, pointsize = 1)
+draw(heatmapPeaks, heatmap_legend_side = "bot", annotation_legend_side = "bot",
+     row_order = names(custom_colors_atac_tcell))
+dev.off()
+```
+
+```{r}
+temp_lineage <- 'bcell'  
+proj <- paste0('proj_', temp_lineage) %>% as.name(.) %>% eval(.)
+markersPeaks <- readRDS(paste0(proj@projectMetadata$outputDirectory, '/', 'MarkersPeaks_anno1', '.rds'))
+
+heatmapPeaks <- plotMarkerHeatmap(
+  seMarker = markersPeaks,
+  cutOff = "FDR <= 0.01 & Log2FC >= 1",
+  plotLog2FC = F,
+  clusterCols = F,
+  transpose = TRUE,
+  nLabel = 0
+)
+
+pdf(paste0(out.dir, temp_lineage, '_markersPeaks', '.pdf'), width = 5, height = 5, pointsize = 1)
+draw(heatmapPeaks, heatmap_legend_side = "bot", annotation_legend_side = "bot",
+     row_order = names(custom_colors_atac_bcell))
+dev.off()
+```
+
+
+```{r}
+temp_lineage <- 'myeloid'  
+proj <- paste0('proj_', temp_lineage) %>% as.name(.) %>% eval(.)
+markersPeaks <- readRDS(paste0(proj@projectMetadata$outputDirectory, '/', 'MarkersPeaks_anno1', '.rds'))
+
+heatmapPeaks <- plotMarkerHeatmap(
+  seMarker = markersPeaks,
+  cutOff = "FDR <= 0.01 & Log2FC >= 1",
+  plotLog2FC = F,
+  clusterCols = F,
+  transpose = TRUE,
+  nLabel = 0
+)
+
+pdf(paste0(out.dir, temp_lineage, '_markersPeaks', '.pdf'), width = 5, height = 5, pointsize = 1)
+draw(heatmapPeaks, heatmap_legend_side = "bot", annotation_legend_side = "bot",
+     row_order = names(custom_colors_atac_myeloid))
+dev.off()
+```
+
+```{r}
+temp_lineage <- 'others'  
+proj <- paste0('proj_', temp_lineage) %>% as.name(.) %>% eval(.)
+markersPeaks <- readRDS(paste0(proj@projectMetadata$outputDirectory, '/', 'MarkersPeaks_anno1', '.rds'))
+
+heatmapPeaks <- plotMarkerHeatmap(
+  seMarker = markersPeaks,
+  cutOff = "FDR <= 0.01 & Log2FC >= 1",
+  plotLog2FC = F,
+  clusterCols = F,
+  transpose = TRUE,
+  nLabel = 0
+)
+
+pdf(paste0(out.dir, temp_lineage, '_markersPeaks', '.pdf'), width = 5, height = 5, pointsize = 1)
+draw(heatmapPeaks, heatmap_legend_side = "bot", annotation_legend_side = "bot",
+     row_order = names(custom_colors_atac_others))
+dev.off()
+```
+
+
+
+### 2. browser track preparation
+
+```{r}
+# EC by loc
+xx.1 <- 'http://194.113.195.165/data/rc2/myeloid_anno1/'
+folder.bigwig <- '~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_myeloid_filtered2/GroupBigWigs/anno1'
+
+celltypes <- list.files(folder.bigwig)
+for (celltype in celltypes){
+  cat(paste0(xx.1,celltype,'\n'))
+}
+
+```
+
+
+
+

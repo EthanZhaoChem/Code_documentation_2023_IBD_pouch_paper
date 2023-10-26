@@ -1,0 +1,248 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+knitr::opts_knit$set(root.dir = '/home/yuzhao1/gca/yuzhao1/work/pouch_rna/')
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+### unify gca and rc2 rna data
+
+```{r}
+gut_raw <- readRDS('~/yuzhao1/work/final_RC2rna/preprocessing/RC2rna_all24samples_removedAmbientRNA_calculatedDoubletScores_seurat_filtered.rds')
+
+```
+
+```{r}
+gut_raw$biopsy_location[which(gut_raw$Sample_ID == "HA02-TI")] <- 'AC'
+gut_raw$biopsy_location[which(gut_raw$Sample_ID == "HA02-AC")] <- 'TI'
+gut_raw$Sample_ID_Corrected <- mapvalues(gut_raw$Sample_ID,
+                                         from = c("HA02-TI", "HA02-AC"),
+                                         to = c("HA02-AC", "HA02-TI"))
+```
+
+
+```{r}
+# post annotation and split
+# split categories based on res0.5
+epithelial.clusters <- c(0,2,3,8,12,13,14)
+immune.clusters <- c(1,4,5,6,7,11)
+others.clusters <- c(9,10,15,16,17)
+cellnames.epithelial <- Cells(gut_raw)[which(gut_raw$seurat_clusters_res0.2 %in% epithelial.clusters)]
+cellnames.immune <- Cells(gut_raw)[which(gut_raw$seurat_clusters_res0.2 %in% immune.clusters)]
+cellnames.others <- Cells(gut_raw)[which(gut_raw$seurat_clusters_res0.2 %in% others.clusters)]
+
+gut_raw$category1 <- 'what'
+gut_raw@meta.data[cellnames.epithelial, 'category1'] <- 'epithelial'
+gut_raw@meta.data[cellnames.immune, 'category1'] <- 'immune'
+gut_raw@meta.data[cellnames.others, 'category1'] <- 'others'
+```
+
+```{r}
+epithelial <- subset(gut_raw, category1 =='epithelial')
+immune <- subset(gut_raw, category1 =='immune')
+others <- subset(gut_raw, category1 =='others')
+saveRDS(gut_raw, '~/yuzhao1/work/final_RC2rna/annotation/rds/gut_raw1.rds')
+saveRDS(epithelial, '~/yuzhao1/work/final_RC2rna/annotation/rds/epithelial1.rds')
+saveRDS(immune, '~/yuzhao1/work/final_RC2rna/annotation/rds/immune1.rds')
+saveRDS(others, '~/yuzhao1/work/final_RC2rna/annotation/rds/others1.rds')
+```
+
+```{r}
+gut_raw <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/gut_raw1.rds')
+
+```
+
+
+### workflow
+
+```{r, include = F, eval=F}
+s.genes <- cc.genes$s.genes
+g2m.genes <- cc.genes$g2m.genes
+gut_raw <- CellCycleScoring(gut_raw, s.features = s.genes, g2m.features = g2m.genes, set.ident = F)
+gut_raw$CC.Difference <- gut_raw$S.Score - gut_raw$G2M.Score
+
+gut_raw <- NormalizeData(gut_raw)
+gut_raw <- FindVariableFeatures(gut_raw, selection.method = "vst", nfeatures = 2000)
+gut_raw <- ScaleData(gut_raw, vars.to.regress = c('percent.mt', 'nCount_RNA', 'CC.Difference'))
+gut_raw <- RunPCA(gut_raw, npcs = 50)
+
+gut_raw <- RunHarmony(gut_raw, group.by.vars = c('Patient_ID'), max.iter.harmony = 20)
+gut_raw <- RunUMAP(gut_raw, dims = 1:50, reduction = 'harmony', reduction.name = 'harmony_umap', reduction.key = 'UMAP_',
+                   n.neighbors = 50)
+gut_raw <- FindNeighbors(gut_raw, reduction = 'harmony', dims = 1:50)
+
+gut_raw <- FindClusters(gut_raw, resolution = 0.5)
+gut_raw$seurat_clusters_res0.5 <- Idents(gut_raw)
+
+gut_raw <- FindClusters(gut_raw, resolution = 1)
+gut_raw$seurat_clusters_res1 <- Idents(gut_raw)
+
+gut_raw <- FindClusters(gut_raw, resolution = 1.5)
+gut_raw$seurat_clusters_res1.5 <- Idents(gut_raw)
+
+gut_raw <- FindClusters(gut_raw, resolution = 0.2)
+gut_raw$seurat_clusters_res0.2 <- Idents(gut_raw)
+```
+
+```{r}
+xx <- list()
+
+for (cluster in c(12,14,15,16,17)%>%as.character(.)){
+  xx[[cluster]] <- FindMarkers(gut_raw, ident.1 = cluster, min.pct = 0.2, logfc.threshold = 1, group.by = 'seurat_clusters_res0.2')
+}
+
+View(xx[['12']])
+```
+
+
+
+
+
+
+
+### Check clustering results
+
+```{r, fig.height=10, fig.width=8.5}
+df <- data.frame(gut_raw@meta.data)
+df$embedding1 <- data.frame(gut_raw@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(gut_raw@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$cluster_name <- gut_raw$seurat_clusters_res0.2
+plot_df_umap_custom(df, show.label = 'name')
+```
+
+```{r, fig.height=12, fig.width=12}
+df <- data.frame(gut_raw@meta.data)
+df$embedding1 <- data.frame(gut_raw@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(gut_raw@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$cluster_name <- gut_raw$seurat_clusters_res0.2
+plot_df_umap_custom(df, show.label = 'name') +
+  facet_wrap(~ biopsy_location) +
+  theme(
+    strip.background = element_rect(fill = "white", colour = "white"),
+    strip.text = element_text(size = 12)
+  )
+```
+
+
+#### Check specific markers
+
+
+```{r}
+feature <- 'TRPM5'
+df <- data.frame(gut_raw@meta.data)
+df$embedding1 <- data.frame(gut_raw@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(gut_raw@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$cluster_name <- gut_raw$seurat_clusters_res0.5
+df$feature_to_plot <- FetchData(gut_raw, feature) %>% unlist()
+plot_df_umap_custom(df, plot_feature = T)
+```
+
+
+```{r}
+feature <- 'EPCAM'
+df <- data.frame(gut_raw@meta.data)
+df$embedding1 <- data.frame(gut_raw@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(gut_raw@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$feature_to_plot <- FetchData(gut_raw, feature) %>% unlist()
+plot_df_umap_custom(df, plot_feature = T)
+```
+
+```{r}
+feature <- 'ITLN2'
+df <- data.frame(gut_raw@meta.data)
+df$embedding1 <- data.frame(gut_raw@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(gut_raw@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$feature_to_plot <- FetchData(gut_raw, feature) %>% unlist()
+plot_df_umap_custom(df, plot_feature = T)
+```
+
+```{r}
+feature <- 'PTPRC'
+df <- data.frame(gut_raw@meta.data)
+df$embedding1 <- data.frame(gut_raw@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(gut_raw@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$cluster_name <- gut_raw$seurat_clusters_res0.5
+df$feature_to_plot <- FetchData(gut_raw, feature) %>% unlist()
+plot_df_umap_custom(df, plot_feature = T)
+```
+
+
+```{r}
+feature <- 'IGHA1'
+df <- data.frame(gut_raw@meta.data)
+df$embedding1 <- data.frame(gut_raw@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(gut_raw@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$cluster_name <- gut_raw$seurat_clusters_res0.5
+df$feature_to_plot <- FetchData(gut_raw, feature) %>% unlist()
+plot_df_umap_custom(df, plot_feature = T)
+```
+
+```{r}
+feature <- 'IGHG1'
+df <- data.frame(gut_raw@meta.data)
+df$embedding1 <- data.frame(gut_raw@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(gut_raw@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$cluster_name <- gut_raw$seurat_clusters_res0.5
+df$feature_to_plot <- FetchData(gut_raw, feature) %>% unlist()
+plot_df_umap_custom(df, plot_feature = T)
+```
+
+```{r}
+feature <- 'COL1A1'
+df <- data.frame(gut_raw@meta.data)
+df$embedding1 <- data.frame(gut_raw@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(gut_raw@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$cluster_name <- gut_raw$seurat_clusters_res0.5
+df$feature_to_plot <- FetchData(gut_raw, feature) %>% unlist()
+plot_df_umap_custom(df, plot_feature = T)
+```
+
+```{r}
+feature <- ''
+df <- data.frame(gut_raw@meta.data)
+df$embedding1 <- data.frame(gut_raw@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(gut_raw@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$cluster_name <- gut_raw$seurat_clusters_res0.5
+df$feature_to_plot <- FetchData(gut_raw, feature) %>% unlist()
+plot_df_umap_custom(df, plot_feature = T)
+```
+
+
+```{r}
+feature <- 'PECAM1'
+df <- data.frame(gut_raw@meta.data)
+df$embedding1 <- data.frame(gut_raw@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(gut_raw@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$cluster_name <- gut_raw$seurat_clusters_res0.5
+df$feature_to_plot <- FetchData(gut_raw, feature) %>% unlist()
+plot_df_umap_custom(df, plot_feature = T)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

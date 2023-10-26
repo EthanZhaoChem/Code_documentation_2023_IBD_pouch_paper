@@ -1,0 +1,116 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(limma)
+library(edgeR)
+library(variancePartition)
+library(BiocParallel)
+library(tidyverse)
+
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+source('/project/gca/yuzhao1/scripts/seurat/deg_pseudobulk.R')
+out.dir <- '/project/gca/yuzhao1/work/manu/rc2/plots/'
+```
+
+```{r, include = F, eval=F}
+# union <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/gut_filtered.rds')
+epithelial <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/epithelial3.rds')
+```
+
+### stem2 stem1
+
+```{r}
+seurat <- subset(epithelial, cells = Cells(epithelial)[epithelial$anno2 %in% c('Stem1', 'Stem2')])
+seurat$anno1 <- seurat$anno2
+```
+
+
+```{r}
+seurat$anno1.sub <- seurat$anno1
+seurat$anno1 <- 'Stem'
+unique(seurat$anno1)
+unique(seurat$anno1.sub)
+table(seurat@meta.data[, c('Patient_ID', 'anno1.sub')])
+```
+
+```{r}
+# add metadata
+metadata <- read.csv('~/yuzhao1/work/final_RC2rna/metadata/supp_table1.csv')
+seurat$age <- mapvalues(seurat$Patient_ID, from = metadata$Patient.ID, metadata$Age) %>% as.numeric()
+seurat$gender <- mapvalues(seurat$Patient_ID, from = metadata$Patient.ID, metadata$Gender)
+```
+
+```{r}
+de_results <- de_genes(seurat_input = seurat,
+                                 classification = 'anno1',
+                                 model_formula = ~  anno1.sub + (1|Patient_ID),
+                                 maineffect = 'anno1.sub',
+                                 pseudo_factors = c('anno1.sub', 'Patient_ID'))
+```
+
+
+```{r}
+de_results[["Stem"]] = eBayes(de_results[["Stem"]])
+saveRDS(de_results ,'~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/stem/de_results_Stem2vs1_bulk.rds')
+```
+
+```{r}
+de_results <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/stem/de_results_Stem2vs1_bulk.rds')
+
+
+topTable(de_results[["Stem"]],
+         coef="anno1.subStem2",
+         p.value = 0.05,
+         sort.by = 'logFC',
+         number = 1000000)
+```
+
+
+
+```{r}
+# pathway enrichment
+source('~/yuzhao1/scripts/deg_dep_utils.R')
+de_results <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/stem/de_results_Stem2vs1_bulk.rds')
+```
+
+
+```{r}
+# prepare for enrichment (p<0.05)
+fclist <- topTable(de_results[["Stem"]],
+         coef="anno1.subStem2",
+         p.value = 0.05,
+         sort.by = 'logFC',
+         number = 1000000)
+
+Res <- myEnrichGSEA_msigdb(GetGenelist(fclist))  ## return a list; each element is a msigdb set (e.g. C8)
+resDf <- do.call("rbind", lapply(Res, function(sobj) sobj@result))
+
+saveRDS(resDf ,'~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/stem/pathway_Stem2vs1_bulk.rds')
+```
+
+
+
+
+
+
+
+
+
+
+

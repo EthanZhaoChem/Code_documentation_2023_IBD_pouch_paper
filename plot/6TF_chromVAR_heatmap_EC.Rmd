@@ -1,0 +1,225 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(ArchR)
+library(parallel)
+library(BSgenome.Hsapiens.UCSC.hg38)
+library(ggseqlogo)
+
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('~/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+source('~/yuzhao1/work/manu/rc2/scripts/rna_deg_markers.R')
+source('~/yuzhao1/scripts/helper_archr.R')
+```
+
+```{r, include = F, eval=F}
+proj <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_epithelial_filtered2_EC/")
+addArchRThreads(1)
+```
+
+```{r}
+out.dir <- '/project/gca/yuzhao1/work/manu/rc2/plots/6tf_chromVAR/'
+```
+
+```{r}
+# select motifs based on motif enrichment 
+motif_stats <- readRDS('~/yuzhao1/work/final_RC2atac/peaks/3DARs/motif_stats_EC.rds')
+motifs.selected <- list()
+
+contrast.col <- 'EC_ACvsTI_up'
+xx <- motif_stats[[contrast.col]]
+xx <- xx[xx$mlog10Padj>6, ]
+motifs.selected[[contrast.col]] <- xx[order(xx$mlog10Padj, decreasing = T), 'feature'][1:50]
+
+
+contrast.col <- 'EC_POU2vsPP_up'
+xx <- motif_stats[[contrast.col]]
+xx <- xx[xx$mlog10Padj>6, ]
+motifs.selected[[contrast.col]] <- xx[order(xx$mlog10Padj, decreasing = T), 'feature'][1:50]
+
+contrast.col <- 'EC_ACvsTI_down'
+xx <- motif_stats[[contrast.col]]
+xx <- xx[xx$mlog10Padj>6, ]
+motifs.selected[[contrast.col]] <- xx[order(xx$mlog10Padj, decreasing = T), 'feature'][1:50]
+
+
+contrast.col <- 'EC_POU2vsPP_down'
+xx <- motif_stats[[contrast.col]]
+xx <- xx[xx$mlog10Padj>6, ]
+motifs.selected[[contrast.col]] <- xx[order(xx$mlog10Padj, decreasing = T), 'feature'][1:50]
+
+motifs.selected <- unique(unlist(motifs.selected))
+```
+
+
+```{r}
+motif_dic <- data.frame(id = strsplit(motifs.selected, '_')%>% sapply(.,`[[`,2) %>% as.numeric(),
+                        TF = strsplit(motifs.selected, '_')%>% sapply(.,`[[`,1),
+                        full_name = motifs.selected)
+```
+
+
+### 4. compare cisbp matrix 
+
+```{r}
+proj$anno1_patient <- paste0(proj$anno1_loc, '-', proj$patient)
+patients_control <- grep('HA', unique(proj$patient), value = T)
+patients_uc <- c("OR109",  "OR48",  "OR102", "OR101", "OR43",  "OR72")
+proj$anno1_patient <- factor(proj$anno1_patient, levels = c(paste0('EC-AC', '-', patients_control),
+                                                                paste0('EC-POU2', '-', patients_uc),
+                                                                paste0('EC-POU1', '-', patients_uc),
+                                                                paste0('EC-PP', '-', patients_uc),
+                                                                paste0('EC-TI', '-', patients_control)))
+```
+
+```{r}
+# cisbp.mtx <- getMatrixFromProject(
+#   ArchRProj = proj,
+#   useMatrix = "cisbp",
+#   useSeqnames = NULL,
+#   verbose = TRUE,
+#   binarize = FALSE,
+#   threads = getArchRThreads(),
+#   logFile = createLogFile("getMatrixFromProject")
+# )
+# saveRDS(cisbp.mtx, paste0(out.dir, 'cisbp.mtx'))
+cisbp.mtx <- readRDS(paste0(out.dir, 'cisbp.mtx'))
+```
+
+
+```{r}
+tfs <- t(cisbp.mtx@assays@data$z) %>% as.data.frame()
+tfs$anno1 <- mapvalues(rownames(tfs), from = proj$cellNames, to=proj$anno1_loc)
+
+tfs <- tfs %>%
+  group_by(anno1) %>%
+  dplyr::summarise(across(everything(), mean),.groups = 'drop') %>% 
+  as.data.frame()
+rownames(tfs) <- tfs$anno1
+tfs$anno1 <- NULL
+        
+tfs  <- t(scale(tfs))
+tfs <- tfs[, c("EC-AC", "EC-POU2", "EC-POU1", "EC-PP", "EC-TI")]
+
+tfs <- tfs[motifs.selected,]
+```
+
+
+```{r, fig.height=15, fig.width=4}
+library(ComplexHeatmap)
+df <- tfs
+df <- scale(df)
+d <- dist(df, method = "euclidean")
+hc1 <- hclust(d, method = "complete" )
+group <- cutree(hc1, k = 5)
+
+labels_TF <- c('BACH2', 'CDX1', 'CDX2', 'ESRRA', 'FOSB', 'FOSL1', 'FOXC1', 'GATA1', 'GATA4', 
+            'HNF4A', 'HNF4G', 'JUNB', 'NR2E1', 'MECOM', 'NR2F1', 'PPARA', 'RXRA', 'TCF7',
+            'HOXA4', 'HOXB13', 'HOXC5', 'HOXD12', 'MAFF')
+labels <- mapvalues(labels_TF, 
+                    from = motif_dic$TF,
+                    to = motif_dic$full_name)
+
+labels.idx <- match(labels, rownames(tfs))
+
+pdf(paste0(out.dir, 'TF_chromvar_location_dense.pdf'), width = 5, height = 4.2)
+p1 <- Heatmap(tfs, col = rc2_rna_heatmap_colors_gradient1, cluster_columns = F, 
+              cluster_rows = cluster_within_group( t(tfs), group),
+              show_row_dend = F, show_column_dend = F, show_row_names = T,
+              heatmap_legend_param = list(title = "Mean chromvar z score"),
+              use_raster = F)+
+  rowAnnotation(link = anno_mark(at = labels.idx, labels = labels, labels_gp = gpar(col = "black", fontsize = 6)), 
+                width = unit(0.1, "cm") + 
+                max_text_width(labels))
+
+
+print(p1)
+dev.off()
+```
+
+
+```{r}
+# sample wise
+tfs <- t(cisbp.mtx@assays@data$z) %>% as.data.frame()
+tfs$anno1_patient <- mapvalues(rownames(tfs), from = proj$cellNames, to=proj$anno1_patient)
+
+# prepare this because I removed 1 low-quality samples in sample-wise EC 
+tfs <- subset(tfs, anno1_patient!='EC-POU1-OR109')
+
+tfs <- tfs%>%
+  group_by(anno1_patient) %>%
+  dplyr::summarise(across(everything(), mean),.groups = 'drop') %>% 
+  as.data.frame()
+rownames(tfs) <- tfs$anno1_patient
+tfs$anno1_patient <- NULL
+        
+tfs  <- t(scale(tfs))
+tfs <- tfs[motifs.selected,]
+
+```
+
+```{r, fig.height=12, fig.width=10}
+col.split <- c(
+  rep('EC-AC', 6),
+  rep('EC-POU2', 5),
+  rep('EC-POU1', 6),
+  rep('EC-PP', 6),
+  rep('EC-TI', 6)
+)
+col_seq <- c(paste0('EC-AC', '-', patients_control),
+             paste0('EC-POU2', '-', patients_uc),
+             paste0('EC-POU1', '-', patients_uc),
+             paste0('EC-PP', '-', patients_uc),
+             paste0('EC-TI', '-', patients_control))
+col_seq <- col_seq[-which(col_seq %in% c("EC-POU1-OR109") )]
+tfs <- tfs[, col_seq]
+
+labels_TF <- c('BACH2', 'CDX1', 'CDX2', 'ESRRA', 'FOSB', 'FOSL1', 'FOXC1', 'GATA1', 'GATA4', 
+            'HNF4A', 'HNF4G', 'JUNB', 'NR2E1', 'MECOM', 'NR2F1', 'PPARA', 'RXRA', 'TCF7',
+            'HOXA4', 'HOXB13', 'HOXC5', 'HOXD12', 'MAFF')
+labels <- mapvalues(labels_TF, 
+                    from = motif_dic$TF,
+                    to = motif_dic$full_name)
+
+p2 <- Heatmap(tfs, col = rc2_rna_heatmap_colors_gradient1, cluster_columns = T, cluster_rows = T,
+              show_row_dend = F, show_column_dend = F, show_row_names = F,
+        rect_gp = gpar(col = "white", lwd = 0.5), cluster_column_slices = FALSE,
+        border = F, column_gap = unit(3, "mm"),
+        column_split = factor(col.split, levels = c('EC-AC', 'EC-POU2', 'EC-POU1', 'EC-PP', 'EC-TI')),
+        use_raster = F
+        )+
+  rowAnnotation(link = anno_mark(at = labels.idx, labels = labels, labels_gp = gpar(col = "black", fontsize = 6)), 
+                width = unit(0.1, "cm") + 
+                max_text_width(labels))
+
+pdf(paste0(out.dir, 'TF_chromvar_sample_dense.pdf'), width = 8, height = 5, pointsize = 1)
+print(p2)
+dev.off()
+```
+
+
+
+
+
+
+
+
+
+
+
+

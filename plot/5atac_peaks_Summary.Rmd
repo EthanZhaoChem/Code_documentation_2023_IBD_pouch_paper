@@ -1,0 +1,144 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(ArchR)
+library(parallel)
+library(BSgenome.Hsapiens.UCSC.hg38)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+source('~/yuzhao1/scripts/helper_archr.R')
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('~/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+source('~/yuzhao1/work/manu/rc2/scripts/rna_deg_markers.R')
+```
+
+```{r}
+# proj_union <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_filtered/")
+proj_epithelial <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_epithelial_filtered2/")
+# proj_immune <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_immune_filtered/")
+proj_tcell <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_tcell_filtered2/")
+proj_bcell <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_bcell_filtered/")
+proj_myeloid <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_myeloid_filtered2/")
+proj_others <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_others_filtered2/")
+```
+
+```{r}
+out.dir <- '~/yuzhao1/work/manu/rc2/plots/5atac_peaks_Summary/'
+```
+
+
+
+# 0. function
+```{r}
+plotPeakCallSummary <- function(
+	ArchRProj = NULL, 
+	pal = NULL
+	){
+
+  peakDF <- metadata(ArchRProj@peakSet)$PeakCallSummary
+  
+  if(is.null(peakDF)){
+    stop("Error no Peak Call Summary available are you sure these peaks were called with CreateReproduciblePeakSet?")
+  }
+
+  if(is.null(pal)){
+    pal <- paletteDiscrete(values=peakDF$Var1)
+  }
+  pal <- c("Distal" = "#b3de69", "Exonic" = "#73C6FF", "Intronic" = "#abd9e9", "Promoter" = "#FFC554", pal) 
+  pal <- pal[!duplicated(names(pal))]
+
+  lengthMax <- split(peakDF$Freq, peakDF$Group) %>% lapply(sum) %>% unlist %>% max
+
+  colnames(peakDF)[colnames(peakDF)=="Var1"] <- "PeakAnno"
+  
+  # sort based on #peak
+  xlabel_levels <- split(peakDF$Freq, peakDF$Group) %>% lapply(sum) %>% unlist %>% sort(decreasing = T) %>% names()
+  peakDF$Group <- factor(peakDF$Group, levels = xlabel_levels)
+
+  p <- ggplot(peakDF, aes(x=Group, y=Freq, fill=PeakAnno)) + 
+    geom_bar(stat = "identity") + 
+    theme_ArchR(xText90 = TRUE) +
+    ylab("Number of Peaks (x10^3)") +
+    xlab("") + 
+    theme(
+      axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      legend.position = "bottom", 
+      legend.key = element_rect(size = 2), 
+      legend.box.background = element_rect(color = NA)
+    ) +
+    scale_fill_manual(values=pal) +
+    scale_y_continuous(
+      breaks = seq(0, lengthMax * 2,50), 
+      limits = c(0, lengthMax * 1.1), 
+      expand = c(0,0)
+      )
+
+  attr(p, "ratioYX") <- 0.5
+
+  return(p)
+
+}
+```
+
+
+
+
+
+### 1. five lineages
+
+```{r}
+for (temp_lineage in c('epithelial', 'tcell', 'bcell', 'myeloid', 'others')) {
+  proj <- paste0('proj_', temp_lineage) %>% as.name(.) %>% eval(.)
+  ideal_width <- metadata(proj@peakSet)$PeakCallSummary[['Group']] %>% unique() %>% length() * 0.3+2
+  
+  p <- plotPeakCallSummary(proj)
+  pdf(paste0(out.dir, temp_lineage, '_peaks', '.pdf'), width = ideal_width, height = 6, pointsize = 1)
+  print(p)
+  dev.off()
+}
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

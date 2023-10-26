@@ -1,0 +1,142 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(limma)
+library(edgeR)
+library(variancePartition)
+library(BiocParallel)
+library(tidyverse)
+library(SingleCellExperiment)
+library(dreamlet)
+library(muscat)
+library(ExperimentHub)
+library(zenith)
+library(scater)
+```
+
+```{r, include = F, eval=F}
+# union <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/gut_filtered.rds')
+epithelial <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/epithelial3.rds')
+```
+
+```{r}
+seurat <- epithelial
+unique(seurat$anno1)
+
+# done in R4.1
+seurat_tosave <- subset(seurat, cells= Cells(seurat)[which(seurat$anno1_loc%in%c('EC-POU2', 'EC-AC'))])
+saveRDS(seurat_tosave, '~/yuzhao1/work/final_RC2rna/deg/rds/seurat_epithelial_EC_pou2_ac.rds')
+
+```
+
+
+```{r}
+seurat <- readRDS('~/yuzhao1/work/final_RC2rna/deg/rds/seurat_epithelial_EC_pou2_ac.rds')
+```
+
+```{r}
+# add metadata
+metadata <- read.csv('~/yuzhao1/work/final_RC2rna/metadata/supp_table1.csv')
+seurat$age <- mapvalues(seurat$Patient_ID, from = metadata$Patient.ID, metadata$Age) %>% as.numeric()
+seurat$gender <- mapvalues(seurat$Patient_ID, from = metadata$Patient.ID, metadata$Gender)
+```
+
+# dreamlet
+
+```{r}
+## create original single cell experimen object
+xx <- seurat@assays$RNA@counts
+xx.row <- data.frame(gene = rownames(seurat@assays$RNA@counts))
+rownames(xx.row) <- rownames(seurat@assays$RNA@counts)
+rownames(xx) <- NULL
+se <- SingleCellExperiment(assays = list(counts = xx), 
+                           rowData = xx.row,
+                           colData = seurat@meta.data)
+
+
+sce <- as(se, "SingleCellExperiment")
+
+# create pseudo-bulk
+sce$celltype <- 'EC'
+pb <- aggregateToPseudoBulk(sce,
+                            assay = "counts",
+                            cluster_id = "celltype",
+                            sample_id = "Sample_ID_Corrected",
+                            verbose = T)
+assayNames(pb)
+
+# Normalize and apply voom/voomWithDreamWeights
+# the resulting object of class dreamletProcessedData stores
+# normalized data and other information
+res.proc = processAssays(pb, ~ anno1_loc + gender + age ,
+                         min.cells=10, # remove samples a fewer than 10 cells
+                         min.count=10, # remove samples with fewer than 10 counts
+                         min.samples = 3, # remove cell types shown in less than 6 samples
+                         min.prop = 0, # the peaks are already filtered, no need to filter again
+                         isCounts = T,
+                         normalize.method = "TMM",
+                         useCountsWeights = TRUE,
+                         quiet = FALSE)
+details(res.proc)
+
+# run dreamlet
+res.dl = dreamlet(res.proc, ~ anno1_loc + gender + age)
+
+# deg_pou2_vs_ac_removedCF
+deg_pou2_vs_ac_removedCF <- variancePartition::topTable(res.dl[['EC']],
+                            coef = 'anno1_locEC-POU2',
+                            number = 10000000)
+```
+
+```{r}
+# Normalize and apply voom/voomWithDreamWeights
+# the resulting object of class dreamletProcessedData stores
+# normalized data and other information
+res.proc = processAssays(pb, ~ anno1_loc,
+                         min.cells=10, # remove samples a fewer than 10 cells
+                         min.count=10, # remove samples with fewer than 10 counts
+                         min.samples = 3, # remove cell types shown in less than 6 samples
+                         min.prop = 0, # the peaks are already filtered, no need to filter again
+                         isCounts = T,
+                         normalize.method = "TMM",
+                         useCountsWeights = TRUE,
+                         quiet = FALSE)
+details(res.proc)
+
+# run dreamlet
+res.dl = dreamlet(res.proc, ~ anno1_loc)
+
+# deg_pou2_vs_ac_removedCF
+deg_pou2_vs_ac <- variancePartition::topTable(res.dl[['EC']],
+                            coef = 'anno1_locEC-POU2',
+                            number = 10000000)
+```
+
+```{r}
+xx <- deg_pou2_vs_ac_removedCF
+xx$gene <- rownames(xx)
+View(xx[xx$adj.P.Val<0.01, ])
+write.csv(xx[xx$adj.P.Val<0.01, ], '~/yuzhao1/work/final_RC2rna/deg/dreamlet/deg_EC_pou2_vs_ac_removedCF.csv')
+```
+
+```{r}
+yy <- deg_pou2_vs_ac
+yy$gene <- rownames(yy)
+View(yy[yy$adj.P.Val<0.01, ])
+write.csv(yy[yy$adj.P.Val<0.01, ], '~/yuzhao1/work/final_RC2rna/deg/dreamlet/deg_EC_pou2_vs_ac.csv')
+```
+
+
+
+

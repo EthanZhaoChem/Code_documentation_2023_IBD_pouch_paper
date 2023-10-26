@@ -1,0 +1,15 @@
+#!/bin/bash
+
+#SBATCH --output=%x.out
+#SBATCH --error=%x.err
+#SBATCH --time=36:00:00
+#SBATCH --partition=caslake
+#SBATCH --account=pi-spott
+#SBATCH --tasks=1
+#SBATCH --mem=50Gb
+
+
+hisat2 -x /project/gca/yuzhao1/software/hisat2/grch38/genome \
+       -U $1 \
+       -S $2
+                                     

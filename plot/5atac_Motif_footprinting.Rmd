@@ -1,0 +1,119 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(ArchR)
+library(parallel)
+library(BSgenome.Hsapiens.UCSC.hg38)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('~/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+source('~/yuzhao1/work/manu/rc2/scripts/rna_deg_markers.R')
+```
+
+```{r, include = F, eval=F}
+proj_epithelial <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_epithelial_filtered2/")
+proj_ec <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_epithelial_filtered2_EC/")
+```
+
+```{r}
+out.dir <- '~/yuzhao1/work/manu/rc2/plots/5atac_Motif_footprinting/'
+```
+
+### EC
+
+```{r}
+temp_lineage <- 'ec'
+proj <- paste0('proj_', temp_lineage) %>% as.name(.) %>% eval(.)
+dir.create(paste0(out.dir, temp_lineage), showWarnings = F)
+```
+
+
+
+```{r}
+# cisbp motifs
+motifPositions <- getPositions(proj)
+```
+
+```{r}
+motifs <- c("BACH1", "CDX1", "CDX2", "DBP",  "EHF", "ESRRG","FOSL2","FOXA1","FOXA2","FOXA3","FOXK1","FOXM1",
+            "FOXP4-AS1", "GATA5","GATA6","HNF1A","HNF4A-AS1", "HNF4G","HOXA11-AS", "HOXA13",    "HOXA9","HOXB9","HOXD10",    
+            "HOXD9", "IRF8", "JUND", "NFYB", "NR1H2","NR1H4","NR5A2","NRL",  "PPARA","RARA", "RFX2", "RFX3", "RXRA",
+            "SOX30","SOX9", "SP5",  "VDR" )
+markerMotifs <- unlist(lapply(motifs, function(x) grep(x, names(motifPositions), value = TRUE)))
+markerMotifs
+
+```
+
+```{r}
+# proj <- addGroupCoverages(ArchRProj = proj,
+#                           groupBy = "anno1_loc",
+#                           useLabels = T,
+#                           minReplicates = 12,
+#                           maxReplicates = 24,
+#                           minCells = 40,
+#                           maxCells = 10000,
+#                           force = T)
+# 
+# saveArchRProject(proj, load = T)
+```
+
+
+```{r}
+seFoot <- getFootprints(
+  ArchRProj = proj, 
+  positions = motifPositions[markerMotifs], 
+  groupBy = "anno1_loc"
+)
+```
+
+```{r}
+plot.name <- 'Footprints-Subtract-Bias'
+plotFootprints(
+  seFoot = seFoot,
+  ArchRProj = proj, 
+  normMethod = "Subtract",
+  plotName = plot.name,
+  addDOC = FALSE,
+  smoothWindow = 5
+)
+
+file.copy(paste0(proj@projectMetadata$outputDirectory, '/Plots/', plot.name, '.pdf'), out.dir, overwrite = TRUE)
+
+```
+
+
+```{r}
+plot.name <- 'Footprints-Divide-Bias'
+
+plotFootprints(
+  seFoot = seFoot,
+  ArchRProj = proj, 
+  normMethod = "Divide",
+  plotName = plot.name,
+  addDOC = FALSE,
+  smoothWindow = 5
+)
+
+file.copy(paste0(proj@projectMetadata$outputDirectory, '/Plots/', plot.name, '.pdf'), out.dir, overwrite = TRUE)
+
+```
+
+
+
+
+
+

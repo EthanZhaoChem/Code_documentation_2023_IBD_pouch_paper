@@ -1,0 +1,105 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(ArchR)
+library(parallel)
+library(BSgenome.Hsapiens.UCSC.hg38)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('~/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+```
+
+```{r, include = F, eval=F}
+proj_union <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_filtered/")
+proj_epithelial <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_epithelial_filtered2/")
+proj_tcell <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_tcell_filtered2/")
+proj_bcell <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_bcell_filtered/")
+proj_myeloid <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_myeloid_filtered2/")
+proj_others <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_others_filtered2/")
+
+union <- as.data.frame(proj_union@cellColData)
+epithelial <- as.data.frame(proj_epithelial@cellColData)
+tcell <- as.data.frame(proj_tcell@cellColData)
+bcell <- as.data.frame(proj_bcell@cellColData)
+myeloid <- as.data.frame(proj_myeloid@cellColData)
+others <- as.data.frame(proj_others@cellColData)
+```
+
+```{r}
+out.dir <- '~/yuzhao1/work/manu/rc2/plots/4atac_MarkerUmaps/'
+```
+
+### union
+
+```{r}
+temp_lineage <- 'union'  
+proj <- paste0('proj_', temp_lineage) %>% as.name(.) %>% eval(.)
+markerGenes  <- rna.lineage.markers %>% unlist() %>% intersect(., getFeatures(proj))
+p <- plotEmbedding(
+  ArchRProj = proj, 
+  colorBy = "GeneScoreMatrix", 
+  pal = paletteContinuous("solarExtra"),
+  name = markerGenes, 
+  embedding = "Harmony_UMAP",
+  imputeWeights = getImputeWeights(proj))
+
+pdf(paste0(out.dir, temp_lineage, '_markersUmaps', '.pdf'), width = 5, height = 6, pointsize = 1)
+print(p)
+dev.off()
+
+```
+
+### lineages 
+
+```{r}
+# temp_lineage <- 'epithelial'  
+for (temp_lineage in unique(proj_union$lineage)) {
+  proj <- paste0('proj_', temp_lineage) %>% as.name(.) %>% eval(.)
+  markerGenes  <- paste0('rna.', temp_lineage, '.markers') %>% as.name(.) %>% eval(.) %>% unlist() %>% intersect(., getFeatures(proj))
+  p <- plotEmbedding(
+    ArchRProj = proj, 
+    colorBy = "GeneScoreMatrix", 
+    pal = paletteContinuous("solarExtra"),
+    name = markerGenes, 
+    embedding = "Harmony_UMAP",
+    imputeWeights = getImputeWeights(proj))
+  
+  pdf(paste0(out.dir, temp_lineage, '_markersUmaps', '.pdf'), width = 5, height = 6, pointsize = 1)
+  print(p)
+  dev.off()
+}
+
+```
+
+```{r}
+for (i in names(ArchRPalettes)) {
+  print(i)
+  show_col(ArchRPalettes[[i]])
+
+}
+```
+
+
+```{r}
+names(ArchRPalettes)[[19]]
+```
+
+```{r}
+show_col(ArchRPalettes[["solarExtra"]])
+```
+
+

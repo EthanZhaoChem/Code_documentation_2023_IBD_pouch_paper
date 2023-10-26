@@ -1,0 +1,191 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(limma)
+library(edgeR)
+library(variancePartition)
+library(BiocParallel)
+library(tidyverse)
+library(ComplexHeatmap)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_deg_markers.R')
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+source('/project/gca/yuzhao1/scripts/seurat/deg_pseudobulk.R')
+```
+
+```{r, include = F, eval=F}
+union <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/gut_filtered.rds')
+```
+
+### 1. EC
+
+```{r}
+# select motifs based on motif enrichment 
+motif_stats <- readRDS('~/yuzhao1/work/final_RC2atac/peaks/3DARs/motif_stats_EC.rds')
+motifs.selected <- list()
+
+contrast.col <- 'EC_ACvsTI_up'
+xx <- motif_stats[[contrast.col]]
+xx <- xx[xx$mlog10Padj>6, ]
+motifs.selected[[contrast.col]] <- xx[order(xx$mlog10Padj, decreasing = T), 'feature'][1:50]
+
+
+contrast.col <- 'EC_POU2vsPP_up'
+xx <- motif_stats[[contrast.col]]
+xx <- xx[xx$mlog10Padj>6, ]
+motifs.selected[[contrast.col]] <- xx[order(xx$mlog10Padj, decreasing = T), 'feature'][1:50]
+
+contrast.col <- 'EC_ACvsTI_down'
+xx <- motif_stats[[contrast.col]]
+xx <- xx[xx$mlog10Padj>6, ]
+motifs.selected[[contrast.col]] <- xx[order(xx$mlog10Padj, decreasing = T), 'feature'][1:50]
+
+
+contrast.col <- 'EC_POU2vsPP_down'
+xx <- motif_stats[[contrast.col]]
+xx <- xx[xx$mlog10Padj>6, ]
+motifs.selected[[contrast.col]] <- xx[order(xx$mlog10Padj, decreasing = T), 'feature'][1:50]
+
+motifs.selected <- unique(unlist(motifs.selected))
+```
+
+```{r}
+# combine those in rna, filter based on expression
+seurat <- subset(union, cells = Cells(union)[union$anno1 %in% c('EC1-1', 'EC1-2', "EC2-1", "EC2-2")])
+expression.mean <- rowMeans(seurat@assays$RNA@data)
+genes.above0.01 <- names(expression.mean)[expression.mean > 0.01]
+genes <- unique(c(rna_deg_markers_ec_tfs, 
+                strsplit(motifs.selected, '_')%>% sapply(.,`[[`,1)))
+genes <- intersect(genes, genes.above0.01)
+
+plot.title <- 'EC_TF'
+
+plot.height <- 18
+out.dir <- '/project/gca/yuzhao1/work/manu/rc2/plots/6tf_expression/'
+```
+
+
+```{r}
+seurat$anno1 <- seurat$anno1_loc
+seurat$anno1 <- factor(seurat$anno1, levels = c('EC-AC', 'EC-POU2', 'EC-POU1', 'EC-PP', 'EC-TI'))
+seurat$anno1_patient <- paste0(seurat$anno1, '-', seurat$Patient_ID)
+patients_control <- grep('HA', unique(seurat$Patient_ID), value = T)
+patients_uc <- c("OR109",  "OR48",  "OR102", "OR101", "OR43",  "OR72")
+seurat$anno1_patient <- factor(seurat$anno1_patient, levels = c(paste0('EC-AC', '-', patients_control),
+                                                                paste0('EC-POU2', '-', patients_uc),
+                                                                paste0('EC-POU1', '-', patients_uc),
+                                                                paste0('EC-PP', '-', patients_uc),
+                                                                paste0('EC-TI', '-', patients_control)))
+```
+
+
+```{r}
+Average.expression.mtx <- AverageExpression(
+  seurat,
+  assays = 'RNA',
+  features = genes,
+  return.seurat = FALSE,
+  group.by = "anno1",
+  add.ident = NULL,
+  slot = "data",
+  verbose = TRUE
+)
+Average.expression.mtx <- Average.expression.mtx$RNA %>% t(.) %>% scale(.) %>% t(.)
+```
+
+
+```{r, fig.height=15, fig.width=4}
+library(ComplexHeatmap)
+#group = kmeans((Average.expression.mtx), centers = 6)$cluster
+
+# this scalinf process is only used to identify dendrogram
+df <- Average.expression.mtx
+df <- scale(df)
+d <- dist(df, method = "euclidean")
+hc1 <- hclust(d, method = "complete" )
+group <- cutree(hc1, k = 5)
+
+# please choose again the TFs to highlight
+labels <- rna_deg_markers_ec_tfs
+# labels <- genes.show
+labels.idx <- match(labels, rownames(Average.expression.mtx))
+
+pdf(paste0(out.dir, plot.title , '_location_dense.pdf'), width = 5, height = 5)
+p1 <- Heatmap(Average.expression.mtx, col = rc2_rna_heatmap_colors_gradient1, cluster_columns = F, 
+              cluster_rows = cluster_within_group( t(Average.expression.mtx), group),
+              show_row_dend = F, show_column_dend = F, show_row_names = F,
+              heatmap_legend_param = list(title = "Mean expression z score"),
+              use_raster = F)+
+  rowAnnotation(link = anno_mark(at = labels.idx, labels = labels, labels_gp = gpar(col = "black", fontsize = 6)), 
+                width = unit(0.1, "cm") + 
+                max_text_width(labels))
+
+print(p1)
+dev.off()
+```
+
+```{r}
+# prepare this because I removed 2 low-quality samples in sample-wise EC 
+seurat.sub <- subset(seurat, anno1_patient!='EC-POU1-OR109' & anno1_patient!='EC-POU2-OR43')
+```
+
+```{r}
+Average.expression.mtx.patients <- AverageExpression(
+  seurat.sub,
+  assays = 'RNA',
+  features = genes,
+  return.seurat = FALSE,
+  group.by = "anno1_patient",
+  add.ident = NULL,
+  slot = "data",
+  verbose = TRUE
+)
+Average.expression.mtx.patients <- Average.expression.mtx.patients$RNA %>% t(.) %>% scale(.) %>% t(.)
+```
+
+```{r, fig.height=12, fig.width=10}
+col.split <- c(
+  rep('EC-AC', 6),
+  rep('EC-POU2', 5),
+  rep('EC-POU1', 5),
+  rep('EC-PP', 6),
+  rep('EC-TI', 6)
+)
+
+
+# please choose again the TFs to highlight
+labels <- rna_deg_markers_ec_tfs
+# labels <- genes.show
+labels.idx <- match(labels, rownames(Average.expression.mtx))
+
+p2 <- Heatmap(Average.expression.mtx.patients, col = rc2_rna_heatmap_colors_gradient1, 
+              cluster_columns = T,cluster_rows = T,
+              show_row_dend = F, show_column_dend = F, show_row_names = F,
+        rect_gp = gpar(col = "white", lwd = 0.5), cluster_column_slices = FALSE,
+        border = F, column_gap = unit(3, "mm"),
+        column_split = factor(col.split, levels = c('EC-AC', 'EC-POU2', 'EC-POU1', 'EC-PP', 'EC-TI')),
+        use_raster = F
+        )+
+  rowAnnotation(link = anno_mark(at = labels.idx, labels = labels, labels_gp = gpar(col = "black", fontsize = 6)), 
+                width = unit(0.1, "cm") + 
+                max_text_width(labels))
+
+pdf(paste0(out.dir, plot.title , '_sample_dense.pdf'), width = 8, height = 6, pointsize = 1)
+print(p2)
+dev.off()
+```

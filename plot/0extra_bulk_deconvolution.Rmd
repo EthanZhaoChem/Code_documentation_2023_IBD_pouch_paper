@@ -1,0 +1,443 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(tidyr)
+library(magrittr)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('~/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+manual_colors <- manual_colors[!manual_colors %in% c('#ffff99')]
+```
+
+```{r}
+colors_pal_celltype <- c(
+  "EC2" = '#35978f',
+  "EC1" = '#4292c6',
+  "Progenitor" = '#fccde5',
+  "Goblet" = '#b2df8a',
+  "Other Epithelial" = '#9ecae1',
+  "Lymphocyte" = '#bc80bd',
+  "Plasma" = '#fdb462',
+  "Myeloid" = '#e6f598',
+  "Stromal" = '#bebada'
+)
+
+```
+
+```{r}
+theme.composition.sample <-
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_rect(colour = "black", fill=NA, size=1),
+    panel.background = element_blank(),
+    panel.grid = element_blank(),
+    axis.text.y = element_text(size = 15, face = 'bold', colour = 'black'),
+    axis.text.x = element_text(size = 9, face = 'bold',  angle=45, hjust = 1, vjust = 1, colour = 'black'),
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(size = 15, face = 'bold', colour = 'black'),
+    legend.key = element_blank(),
+    legend.title = element_blank(),
+    legend.position = "bottom",
+    legend.text = element_text(size = 12),
+    plot.margin = margin(0.5, 0.5, 0.5, 0.5, "cm"),
+    plot.title = element_blank(),
+    strip.background = element_blank()
+    )
+```
+
+```{r}
+out.dir <- '/project/gca/yuzhao1/work/manu/rc2/plots/extra_bulk_deconvolution/'
+results <- readRDS('/project/gca/yuzhao1/work/final_RC2rna/bulk/music/Final_results_bulk_deconvolution_withPPandPOU_asRef.rds')
+colnames(results)[[5]] <- 'Other Epithelial'
+
+# remove FAP and Ileum samples because they are not informative
+# remove sample EC11b, because it is sequenced twice, all other samples in same cohort are single end seq
+results <- results[which(results$biopsy_location!='Ile' & results$disease_status != 'FAP'), ]
+results <- results[which(results$Sample_ID!='EC11b'), ]
+results$Patient_time <- paste0(results$Patient_ID, '-', results$time)
+results$biopsy_location <- unlist(mapvalues(results$biopsy_location, from = c("Ileal pouch", "Prepouch ileum"), to = c('Pouch', 'PrePouch')))
+results$time <- unlist(mapvalues(results$time, from = c("4mo", "8mo", "12mo", ">12mo"), 
+                                 to = c("4month", "8month", "12month", ">12month")))
+
+```
+
+```{r}
+# test for correlation of EC1 and EC2
+
+df <- results[, c("Sample_ID", "EC2", "EC1", "Goblet", "Other Epithelial", "Progenitor", 
+                  "Lymphocyte", "Plasma", "Myeloid", "Stromal", 'biopsy_location', 'disease_status', 
+                  'Patient_ID','time', 'Patient_time')]
+df <- df[df$biopsy_location=='Pouch',]
+cor_test <- cor.test(df$EC1, df$EC2, method = "spearman")
+
+# Access R-squared value and p-value
+r_squared <- cor_test$estimate^2
+p_value <- cor_test$p.value
+```
+
+
+#### Star 1: split by location (healthy)
+
+```{r}
+df <- results[, c("Sample_ID", "EC2", "EC1", "Goblet", "Other Epithelial", "Progenitor", 
+                  "Lymphocyte", "Plasma", "Myeloid", "Stromal", 'biopsy_location', 'disease_status', 
+                  'Patient_ID','time', 'Patient_time')]
+df <- df[df$disease_status=="Healthy" , ]
+df$location_time <- paste0(df$biopsy_location, ' ', df$time)
+df$location_time <- factor(df$location_time, levels = c("Pouch 4month", "Pouch 8month", "Pouch 12month", "Pouch >12month",
+                                                        "PrePouch 4month", "PrePouch 8month", "PrePouch 12month", "PrePouch >12month"))
+df <- df[order(df$EC2, decreasing = T), ]
+sorted_sampleIDs <- df$Sample_ID
+```
+
+```{r}
+# # give each patient a color
+# patientIDs <- unique(df$Patient_ID)
+# color_vec <- manual_colors[1:length(patientIDs)]
+# names(color_vec) <- patientIDs
+# df$patient_color <- mapvalues(df$Patient_ID, names(color_vec), color_vec)
+```
+
+
+```{r}
+df_long <- tidyr::gather(df, key = "cell_type", value = "value", -Sample_ID, -biopsy_location, -disease_status, -Patient_ID, 
+                         -time, -Patient_time, -location_time, -patient_color)
+df_long$Sample_ID <- factor(df_long$Sample_ID, levels = sorted_sampleIDs)
+df_long$biopsy_location <- factor(df_long$biopsy_location, levels = c("PrePouch", "Pouch"))
+df_long$cell_type <- factor(df_long$cell_type, 
+                            levels = c("EC2", "Progenitor", "Goblet", "Other Epithelial",  
+                                       "Lymphocyte", "Plasma", "Myeloid", "Stromal", "EC1"))
+df_long$value %<>% as.numeric()
+```
+
+
+
+```{r}
+sample_to_patient <- setNames(df$Patient_ID, df$Sample_ID)
+patient_color <- df_long$patient_color
+
+p <-ggplot(df_long, aes(x = Sample_ID, y = value, fill = cell_type)) +
+  geom_bar(position = "stack", stat = "identity")+
+  scale_fill_manual(values = colors_pal_celltype )+
+  labs(title = "", y = "Proportion of cells ", x = "", fill = "")+
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_rect(colour = "black", fill=NA, size=1),
+    panel.background = element_blank(),
+    panel.grid = element_blank(),
+    axis.text.y = element_text(size = 15, face = 'bold', colour = 'black'),
+    axis.text.x = element_text(size = 9, face = 'bold',  angle=45, hjust = 1, vjust = 1, colour = 'black'),
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(size = 15, face = 'bold', colour = 'black'),
+    legend.key = element_blank(),
+    legend.title = element_blank(),
+    legend.position = "bottom",
+    legend.text = element_text(size = 12),
+    plot.margin = margin(0.5, 0.5, 0.5, 0.5, "cm"),
+    plot.title = element_blank(),
+    strip.background = element_blank()
+    )+
+  facet_grid(. ~ location_time, scales = "free_x", space = "free_x")+
+  scale_y_continuous(labels = scales::percent_format())+
+  scale_x_discrete(labels = sample_to_patient)
+
+pdf(paste0(out.dir, 'Star1_HealthySamples_perlocation_time.pdf'), width = 12, height = 6, pointsize = 1)
+p
+dev.off()
+```
+
+
+#### Star 2: split by location (pouchitis)
+
+```{r}
+df <- results[, c("Sample_ID", "EC2", "EC1", "Goblet", "Other Epithelial", "Progenitor", 
+                  "Lymphocyte", "Plasma", "Myeloid", "Stromal", 'biopsy_location', 'disease_status', 
+                  'Patient_ID','time', 'Patient_time', 'patient_color')]
+df <- df[df$disease_status=="Pouchitis" , ]
+df$location_time <- paste0(df$biopsy_location, ' ', df$time)
+df$location_time <- factor(df$location_time, levels = c("Pouch 4month", "Pouch 8month", "Pouch 12month", "Pouch >12month",
+                                                        "PrePouch 4month", "PrePouch 8month", "PrePouch 12month", "PrePouch >12month"))
+df <- df[order(df$EC2, decreasing = T), ]
+sorted_sampleIDs <- df$Sample_ID
+```
+
+```{r}
+# # give each patient a color
+# patientIDs <- unique(df$Patient_ID)
+# color_vec <- manual_colors[1:length(patientIDs)]
+# names(color_vec) <- patientIDs
+# df$patient_color <- mapvalues(df$Patient_ID, names(color_vec), color_vec)
+```
+
+
+```{r}
+df_long <- tidyr::gather(df, key = "cell_type", value = "value", -Sample_ID, -biopsy_location, -disease_status, -Patient_ID, 
+                         -time, -Patient_time, -location_time, -patient_color)
+df_long$Sample_ID <- factor(df_long$Sample_ID, levels = sorted_sampleIDs)
+df_long$biopsy_location <- factor(df_long$biopsy_location, levels = c("PrePouch", "Pouch"))
+df_long$cell_type <- factor(df_long$cell_type, 
+                            levels = c("EC2", "Progenitor", "Goblet", "Other Epithelial",  
+                                       "Lymphocyte", "Plasma", "Myeloid", "Stromal", "EC1"))
+df_long$value %<>% as.numeric()
+```
+
+
+
+```{r}
+sample_to_patient <- setNames(df$Patient_ID, df$Sample_ID)
+patient_color <- df_long$patient_color
+
+p <-ggplot(df_long, aes(x = Sample_ID, y = value, fill = cell_type)) +
+  geom_bar(position = "stack", stat = "identity")+
+  scale_fill_manual(values = colors_pal_celltype )+
+  labs(title = "", y = "Proportion of cells ", x = "", fill = "")+
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_rect(colour = "black", fill=NA, size=1),
+    panel.background = element_blank(),
+    panel.grid = element_blank(),
+    axis.text.y = element_text(size = 15, face = 'bold', colour = 'black'),
+    axis.text.x = element_text(size = 9, face = 'bold',  angle=45, hjust = 1, vjust = 1, colour = 'black'),
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(size = 15, face = 'bold', colour = 'black'),
+    legend.key = element_blank(),
+    legend.title = element_blank(),
+    legend.position = "bottom",
+    legend.text = element_text(size = 12),
+    plot.margin = margin(0.5, 0.5, 0.5, 0.5, "cm"),
+    plot.title = element_blank(),
+    strip.background = element_blank()
+    )+
+  facet_grid(. ~ location_time, scales = "free_x", space = "free_x")+
+  scale_y_continuous(labels = scales::percent_format())+
+  scale_x_discrete(labels = sample_to_patient)
+
+pdf(paste0(out.dir, 'Star1_PouchitisSamples_perlocation_time.pdf'), width = 12, height = 6, pointsize = 1)
+p
+dev.off()
+```
+
+
+
+#### 1.0 split by location
+
+```{r}
+df <- results[, c("Sample_ID", "EC2", "EC1", "Goblet", "Other Epithelial", "Progenitor", 
+                  "Lymphocyte", "Plasma", "Myeloid", "Stromal", 'biopsy_location')]
+df <- df[order(df$EC2, decreasing = T), ]
+sorted_sampleIDs <- df$Sample_ID
+```
+
+```{r}
+df_long <- tidyr::gather(df, key = "cell_type", value = "value", -Sample_ID, -biopsy_location)
+df_long$Sample_ID <- factor(df_long$Sample_ID, levels = sorted_sampleIDs)
+df_long$biopsy_location <- factor(df_long$biopsy_location, levels = c("PrePouch", "Pouch"))
+df_long$cell_type <- factor(df_long$cell_type, 
+                            levels = c("EC2", "Progenitor", "Goblet", "Other Epithelial",  
+                                       "Lymphocyte", "Plasma", "Myeloid", "Stromal", "EC1"))
+df_long$value %<>% as.numeric()
+```
+
+```{r}
+p <-ggplot(df_long, aes(x = Sample_ID, y = value, fill = cell_type)) +
+  geom_bar(position = "stack", stat = "identity")+
+  scale_fill_manual(values = colors_pal_celltype )+
+  labs(title = "", y = "Proportion of cells ", x = "", fill = "")+
+  theme.composition.sample+
+  facet_grid(. ~ biopsy_location, scales = "free_x", space = "free_x")+
+  scale_y_continuous(labels = scales::percent_format())
+
+
+pdf(paste0(out.dir, 'sample_perlocation.pdf'), width = 15, height = 6, pointsize = 1)
+p
+dev.off()
+```
+
+
+
+#### 2. pp only, split by disease
+
+```{r}
+df <- results[, c("Sample_ID", "EC2", "EC1", "Goblet", "Other Epithelial", "Progenitor", 
+                  "Lymphocyte", "Plasma", "Myeloid", "Stromal", 'biopsy_location', 'disease_status', 'Patient_ID','time')]
+df <- df[df$biopsy_location=='PrePouch', ]
+df <- df[order(df$EC2, decreasing = T), ]
+sorted_sampleIDs <- df$Sample_ID
+```
+
+```{r}
+df_long <- tidyr::gather(df, key = "cell_type", value = "value", -Sample_ID, -biopsy_location, -disease_status, -Patient_ID, -time)
+df_long$Sample_ID <- factor(df_long$Sample_ID, levels = sorted_sampleIDs)
+df_long$disease_status<- factor(df_long$disease_status, levels = c("Healthy", "Pouchitis"))
+df_long$cell_type <- factor(df_long$cell_type, 
+                            levels = c("EC2", "Progenitor", "Goblet", "Other Epithelial",  
+                                       "Lymphocyte", "Plasma", "Myeloid", "Stromal", "EC1"))
+df_long$value %<>% as.numeric()
+```
+
+```{r}
+p <-ggplot(df_long, aes(x = Sample_ID, y = value, fill = cell_type)) +
+  geom_bar(position = "stack", stat = "identity")+
+  scale_fill_manual(values = colors_pal_celltype )+
+  labs(title = "", y = "Proportion of cells ", x = "", fill = "")+
+  theme.composition.sample+
+  facet_grid(. ~ disease_status, scales = "free_x", space = "free_x")+
+  scale_y_continuous(labels = scales::percent_format())
+
+
+pdf(paste0(out.dir, 'sample_perDisease_pp.pdf'), width = 10, height = 6, pointsize = 1)
+p
+dev.off()
+```
+
+
+
+#### 3. pouch only, split by disease
+
+```{r}
+df <- results[, c("Sample_ID", "EC2", "EC1", "Goblet", "Other Epithelial", "Progenitor", 
+                  "Lymphocyte", "Plasma", "Myeloid", "Stromal", 'biopsy_location', 'disease_status', 'Patient_ID','time')]
+df <- df[df$biopsy_location=='Pouch', ]
+df <- df[order(df$EC2, decreasing = T), ]
+sorted_sampleIDs <- df$Sample_ID
+```
+
+```{r}
+df_long <- tidyr::gather(df, key = "cell_type", value = "value", -Sample_ID, -biopsy_location, -disease_status, -Patient_ID, -time)
+df_long$Sample_ID <- factor(df_long$Sample_ID, levels = sorted_sampleIDs)
+df_long$disease_status<- factor(df_long$disease_status, levels = c("Healthy", "Pouchitis"))
+df_long$cell_type <- factor(df_long$cell_type, 
+                            levels = c("EC2", "Progenitor", "Goblet", "Other Epithelial",  
+                                       "Lymphocyte", "Plasma", "Myeloid", "Stromal", "EC1"))
+df_long$value %<>% as.numeric()
+```
+
+```{r}
+p <-ggplot(df_long, aes(x = Sample_ID, y = value, fill = cell_type)) +
+  geom_bar(position = "stack", stat = "identity")+
+  scale_fill_manual(values = colors_pal_celltype )+
+  labs(title = "", y = "Proportion of cells ", x = "", fill = "")+
+  theme.composition.sample+
+  facet_grid(. ~ disease_status, scales = "free_x", space = "free_x")+
+  scale_y_continuous(labels = scales::percent_format())
+
+
+pdf(paste0(out.dir, 'sample_perDisease_pouch.pdf'), width = 10, height = 6, pointsize = 1)
+p
+dev.off()
+```
+
+
+#### 4. per individual, split by time, in pouch only (have not colored patientIDs successfully)
+
+```{r}
+df <- results[, c("Sample_ID", "EC2", "EC1", "Goblet", "Other Epithelial", "Progenitor", 
+                  "Lymphocyte", "Plasma", "Myeloid", "Stromal", 'biopsy_location', 'disease_status', 'Patient_ID', 'time')]
+df <- df[df$biopsy_location=='Pouch' & df$disease_status != 'FAP', ]
+df <- df[order(df$EC2, decreasing = T), ]
+sorted_sampleIDs <- df$Sample_ID
+```
+
+```{r}
+df_long <- tidyr::gather(df, key = "cell_type", value = "value", -Sample_ID, -biopsy_location, -disease_status, -Patient_ID, -time)
+df_long$Sample_ID <- factor(df_long$Sample_ID, levels = sorted_sampleIDs)
+df_long$disease_status<- factor(df_long$disease_status, levels = c("Healthy", "Pouchitis"))
+df_long$time<- factor(df_long$time, levels = c("4mo", "12mo", "8mo", ">12mo"))
+
+df_long$cell_type <- factor(df_long$cell_type, 
+                            levels = c("EC2", "Progenitor", "Goblet", "Other Epithelial",  
+                                       "Lymphocyte", "Plasma", "Myeloid", "Stromal", "EC1"))
+df_long$value %<>% as.numeric()
+```
+
+```{r}
+p <- ggplot(df_long, aes(x = Sample_ID, y = value, fill = cell_type)) +
+  geom_bar(position = "stack", stat = "identity")+
+  scale_fill_manual(values = colors_pal_celltype )+
+  labs(title = "", y = "Proportion of cells ", x = "", fill = "")+
+  theme.composition.sample+
+  facet_grid(. ~ time, scales = "free_x", space = 'free_x')+
+  scale_y_continuous(labels = scales::percent_format())
+
+# update x label to patient ID
+sample_to_patient <- setNames(df$Patient_ID, df$Sample_ID)
+
+# give a same color to same patient (patient with multi samples)
+Patients_MultiTimes <- names(table(df$Patient_ID))[table(df$Patient_ID) > 1]
+Patients_SingleTimes <- names(table(df$Patient_ID))[table(df$Patient_ID) == 1]
+
+color_vector <- c(manual_colors[1:length(Patients_MultiTimes)], rep('black', length(Patients_SingleTimes)))
+names(color_vector) <- c(Patients_MultiTimes, Patients_SingleTimes)
+
+pdf(paste0(out.dir, 'sample_perTimePatient_nonFAP_pou.pdf'), width = 10, height = 6, pointsize = 1)
+p + scale_x_discrete(labels = sample_to_patient)+
+  theme(axis.text.x = element_text(color = color_vector[df$Patient_ID]))
+dev.off()
+```
+
+
+
+
+#### 5. per individual, split by individual, in pouch only
+
+```{r}
+df <- results[, c("Sample_ID", "EC2", "EC1", "Goblet", "Other Epithelial", "Progenitor", 
+                  "Lymphocyte", "Plasma", "Myeloid", "Stromal", 'biopsy_location', 'disease_status', 'Patient_ID', 'time')]
+df <- df[df$biopsy_location=='Pouch' & df$disease_status != 'FAP', ]
+df <- df[order(df$EC2, decreasing = T), ]
+sorted_sampleIDs <- df$Sample_ID
+```
+
+```{r}
+df_long <- tidyr::gather(df, key = "cell_type", value = "value", -Sample_ID, -biopsy_location, -disease_status, -Patient_ID, -time)
+df_long$Sample_ID <- factor(df_long$Sample_ID, levels = sorted_sampleIDs)
+df_long$disease_status<- factor(df_long$disease_status, levels = c("Healthy", "Pouchitis"))
+df_long$time<- factor(df_long$time, levels = c("4mo", "12mo", "8mo", ">12mo"))
+
+df_long$cell_type <- factor(df_long$cell_type, 
+                            levels = c("EC2", "Progenitor", "Goblet", "Other Epithelial",  
+                                       "Lymphocyte", "Plasma", "Myeloid", "Stromal", "EC1"))
+df_long$value %<>% as.numeric()
+```
+
+```{r}
+p <- ggplot(df_long, aes(x = Sample_ID, y = value, fill = cell_type)) +
+  geom_bar(position = "stack", stat = "identity")+
+  scale_fill_manual(values = colors_pal_celltype )+
+  labs(title = "", y = "Proportion of cells ", x = "", fill = "")+
+  theme.composition.sample+
+  facet_grid(. ~ Patient_ID, scales = "free_x", space = 'free_x')+
+  scale_y_continuous(labels = scales::percent_format())
+
+# update x label to patient ID
+sample_to_time <- setNames(df$time, df$Sample_ID)
+
+pdf(paste0(out.dir, 'sample_perPatient_nonFAP_pou.pdf'), width = 10, height = 6, pointsize = 1)
+p + scale_x_discrete(labels = sample_to_time)+
+  theme(strip.text.x = element_text(size = 8, angle = 90))
+dev.off()
+```
+
+
+
+
+
+
+

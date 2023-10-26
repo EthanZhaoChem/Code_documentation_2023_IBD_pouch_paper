@@ -1,0 +1,297 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(ArchR)
+library(parallel)
+library(BSgenome.Hsapiens.UCSC.hg38)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('~/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+source('~/yuzhao1/work/manu/rc2/scripts/rna_deg_markers.R')
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/tfs.R')
+
+```
+
+```{r, include = F, eval=F}
+# proj_union <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_filtered/")
+# proj_epithelial <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_epithelial_filtered2/")
+# proj_tcell <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_tcell_filtered2/")
+# proj_bcell <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_bcell_filtered/")
+# proj_myeloid <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_myeloid_filtered2/")
+# proj_others <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_others_filtered2/")
+proj_ec <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_epithelial_filtered2_EC/")
+```
+
+
+### ec only
+
+```{r}
+out.dir <- '~/yuzhao1/work/manu/rc2/plots/5atac_peak_gene_links/ec/'
+```
+
+```{r}
+proj <- proj_ec
+celltype_Groups <- c("EC-AC", "EC-POU2", "EC-POU1", "EC-PP", "EC-TI")
+
+```
+
+```{r}
+p2g <- getPeak2GeneLinks(
+    ArchRProj = proj,
+    corCutOff = 0.6,
+    resolution = 500,
+    returnLoops = TRUE
+)
+```
+
+
+```{r}
+
+celltype_Groups <- c("EC-AC", "EC-POU2", "EC-POU1", "EC-PP", "EC-TI")
+markerGenes <- tf_genes
+p <- plotBrowserTrack(
+    ArchRProj = proj, 
+    groupBy = "anno1_loc", 
+    useGroups = celltype_Groups,
+    geneSymbol = markerGenes, 
+    upstream = 50000,
+    downstream = 50000,
+    loops = p2g
+)
+for (x.gene in markerGenes) {
+  pdf(paste0(out.dir, '/', x.gene, '.pdf'), width = 5, height = 5, pointsize = 1)
+  grid::grid.newpage()
+  grid::grid.draw(p[[x.gene]])
+  dev.off()
+}
+
+```
+
+```{r}
+markerGenes <- c('CA2')
+p <- plotBrowserTrack(
+    ArchRProj = proj, 
+    groupBy = "anno1_loc", 
+    useGroups = celltype_Groups,
+    geneSymbol = markerGenes, 
+    upstream = 50000,
+    downstream = 100000,
+    loops = p2g
+)
+for (x.gene in markerGenes) {
+  pdf(paste0(out.dir, '/', x.gene, '.pdf'), width = 5, height = 5, pointsize = 1)
+  grid::grid.newpage()
+  grid::grid.draw(p[[x.gene]])
+  dev.off()
+}
+```
+
+```{r}
+markerGenes <- c('APOA4')
+p <- plotBrowserTrack(
+    ArchRProj = proj, 
+    groupBy = "anno1_loc", 
+    useGroups = celltype_Groups,
+    geneSymbol = markerGenes, 
+    upstream = 50000,
+    downstream = 50000,
+    loops = p2g
+)
+for (x.gene in markerGenes) {
+  pdf(paste0(out.dir, '/', x.gene, '.pdf'), width = 5, height = 5, pointsize = 1)
+  grid::grid.newpage()
+  grid::grid.draw(p[[x.gene]])
+  dev.off()
+}
+```
+
+```{r}
+markerGenes <- c('MAF')
+p <- plotBrowserTrack(
+    ArchRProj = proj, 
+    groupBy = "anno1_loc", 
+    useGroups = celltype_Groups,
+    geneSymbol = markerGenes, 
+    upstream = 50000,
+    downstream = 50000,
+    loops = p2g
+)
+for (x.gene in markerGenes) {
+  pdf(paste0(out.dir, '/', x.gene, '.pdf'), width = 5, height = 5, pointsize = 1)
+  grid::grid.newpage()
+  grid::grid.draw(p[[x.gene]])
+  dev.off()
+}
+```
+
+```{r}
+markerGenes <- c('SATB2')
+p <- plotBrowserTrack(
+    ArchRProj = proj, 
+    groupBy = "anno1_loc", 
+    useGroups = celltype_Groups,
+    geneSymbol = markerGenes, 
+    upstream = 300000,
+    downstream = 100000,
+    loops = p2g
+)
+for (x.gene in markerGenes) {
+  pdf(paste0(out.dir, '/', x.gene, '.pdf'), width = 5, height = 5, pointsize = 1)
+  grid::grid.newpage()
+  grid::grid.draw(p[[x.gene]])
+  dev.off()
+}
+```
+
+
+```{r}
+markerGenes <- c('MECOM')
+p <- plotBrowserTrack(
+    ArchRProj = proj, 
+    groupBy = "anno1_loc", 
+    useGroups = celltype_Groups,
+    geneSymbol = markerGenes, 
+    upstream = 200000,
+    downstream = 200000,
+    loops = p2g
+)
+for (x.gene in markerGenes) {
+  pdf(paste0(out.dir, '/', x.gene, '.pdf'), width = 5, height = 5, pointsize = 1)
+  grid::grid.newpage()
+  grid::grid.draw(p[[x.gene]])
+  dev.off()
+}
+```
+
+
+```{r}
+markerGenes <- c('SOX6')
+p <- plotBrowserTrack(
+    ArchRProj = proj, 
+    groupBy = "anno1_loc", 
+    useGroups = celltype_Groups,
+    geneSymbol = markerGenes, 
+    upstream = 200000,
+    downstream = 200000,
+    loops = p2g
+)
+for (x.gene in markerGenes) {
+  pdf(paste0(out.dir, '/', x.gene, '.pdf'), width = 5, height = 5, pointsize = 1)
+  grid::grid.newpage()
+  grid::grid.draw(p[[x.gene]])
+  dev.off()
+}
+```
+
+
+
+### links browser track in all epithelial 
+
+```{r}
+temp_lineage <- 'epithelial'
+temp_celltype <- 'ec'
+celltype_Groups = c("EC-AC", "EC-POU2", "EC-POU1", "EC-PP", "EC-TI")
+markerGenes  <- rna_deg_markers_ec_tfs
+markerGenes <- c('SATB2', 'CDX2', 'FOXA2', 'HOXB9', 'HNF4G', 'PPARA')
+```
+
+```{r}
+proj <- paste0('proj_', temp_lineage) %>% as.name(.) %>% eval(.)
+dir.create(paste0(out.dir, temp_celltype), showWarnings = F)
+
+p2g <- getPeak2GeneLinks(
+    ArchRProj = proj,
+    corCutOff = 0.45,
+    resolution = 1000,
+    returnLoops = TRUE
+)
+```
+
+```{r}
+p <- plotBrowserTrack(
+    ArchRProj = proj, 
+    groupBy = "anno1_loc", 
+    useGroups = celltype_Groups,
+    geneSymbol = markerGenes, 
+    upstream = 50000,
+    downstream = 50000,
+    loops = p2g
+)
+```
+
+```{r}
+for (x.gene in markerGenes) {
+  pdf(paste0(out.dir, temp_celltype, '/', x.gene, '.pdf'), width = 5, height = 5, pointsize = 1)
+  grid::grid.newpage()
+  grid::grid.draw(p[[x.gene]])
+  dev.off()
+}
+```
+
+
+
+### heatmap in EC only project
+
+
+```{r}
+cc.pal <- c('EC-AC'="#80b1d3",
+            'EC-TI'="#8dd3c7",
+            'EC-POU1'="#fdb462",
+            'EC-POU2'="#fdb462", 
+            'EC-PP'="#b3de69")
+
+
+
+pdf(paste0('~/yuzhao1/work/manu/rc2/plots/5atac_peak_gene_links/', 'ec_heatmap.pdf'), width = 10, height = 8, pointsize = 1)
+p <- plotPeak2GeneHeatmap(ArchRProj = proj_ec, groupBy = "anno1_loc", palGroup = cc.pal)
+p
+dev.off()
+```
+
+```{r}
+pdf(paste0('~/yuzhao1/work/manu/rc2/plots/5atac_peak_gene_links/', 'epithelial_heatmap.pdf'), width = 10, height = 8, pointsize = 1)
+p <- plotPeak2GeneHeatmap(ArchRProj = proj_epithelial, groupBy = "anno1", palGroup = custom_colors_atac_epithelial)
+p
+dev.off()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

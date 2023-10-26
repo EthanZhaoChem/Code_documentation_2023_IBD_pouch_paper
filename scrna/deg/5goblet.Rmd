@@ -1,0 +1,279 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(limma)
+library(edgeR)
+library(variancePartition)
+library(BiocParallel)
+library(tidyverse)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+source('/project/gca/yuzhao1/scripts/seurat/deg_pseudobulk.R')
+source('~/yuzhao1/scripts/deg_dep_utils.R')
+```
+
+```{r, include = F, eval=F}
+union <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/gut_filtered.rds')
+```
+
+```{r}
+union$anno1[union$anno1 %in% c('Goblet1', 'Goblet2')] <- 'Goblet' 
+groupToTest <- 'Goblet'
+seurat <- subset(union, anno1 == groupToTest)
+seurat$anno1_loc <- paste0(seurat$anno1, '_', seurat$biopsy_location)
+
+group.ti <- paste0(groupToTest, '_TI')
+group.pp <- paste0(groupToTest, '_PP')
+group.pou <- paste0(groupToTest, '_POU')
+group.ac <- paste0(groupToTest, '_AC')
+```
+
+```{r}
+out.dir <- '~/yuzhao1/work/final_RC2rna/deg/epithelial/goblet/'
+```
+
+### 0, summarize results
+
+```{r}
+expression.mean <- rowMeans(seurat@assays$RNA@data)
+genes.above0.05 <- names(expression.mean)[expression.mean > 0.05]
+```
+
+```{r}
+maxGenes_perGroup <- 50
+comparisons <- c('TIvsPP','POUvsAC')
+markers <- list() # save raw logFC data
+markers_filtered <- list() # filter genes based on: |avg_log2FC|>0.5, p_val_adj < 0.001, expression.mean > 0.05
+genes_afterFiltering <- list() # gene names in markers_filtered
+markers_selected <- list() # top 50 gene names sorting by |avg_log2FC| per group
+pathways <- list()
+
+for (comparison in comparisons){
+  fclist <- readRDS(paste0(out.dir, 'markers_wilcoxon_', comparison, '.rds'))
+  fclist$gene <- rownames(fclist)
+  markers[[comparison]] <- fclist
+  fclist <- fclist[abs(fclist$avg_log2FC)>0.5 & fclist$p_val_adj < 0.001, ]
+  fclist <- fclist[rownames(fclist) %in% genes.above0.05, ]
+  markers_filtered[[comparison]] <- fclist
+  genes_afterFiltering[[comparison]] <- rownames(fclist)
+
+  if(nrow(fclist) > maxGenes_perGroup){
+    fclist$abs_log2FC <- abs(fclist$avg_log2FC)
+    fclist <- fclist[order(fclist$abs_log2FC, decreasing = T),]
+    fclist <- fclist[1:maxGenes_perGroup, ]
+  }
+  markers_selected[[comparison]] <- rownames(fclist)
+  pathways[[comparison]] <- readRDS(paste0(out.dir, 'pathways_wilcoxon_', comparison, '.rds'))
+}
+
+```
+
+```{r}
+comparison <- 'PPvsPOU'
+de_results  <- readRDS(paste0(out.dir, 'markers_pseudobulk_', comparison, '.rds'))
+resDf <- readRDS(paste0(out.dir, 'pathways_pseudobulk_', comparison, '.rds'))
+
+fclist <- topTable(
+  de_results[[groupToTest]],
+  coef = "anno1_locGoblet_PP",
+  p.value = 0.5,
+  sort.by = 'logFC',
+  number = 10000
+)
+
+fclist <- fclist[rownames(fclist) %in% genes.above0.05, ]
+fclist$gene <- rownames(fclist)
+
+genes_up <- rownames(fclist)[fclist$logFC > 0.5]
+genes_down <- rownames(fclist)[fclist$logFC < -0.5]
+
+markers_filtered[[comparison]] <- fclist[c(genes_up, genes_down), ]
+pathways[[comparison]] <- resDf 
+markers_selected[[comparison]] <- c(head(genes_up, 50), head(genes_down, 50))
+```
+
+```{r}
+comparison <- 'TIvsAC'
+de_results  <- readRDS(paste0(out.dir, 'markers_pseudobulk_', comparison, '.rds'))
+resDf <- readRDS(paste0(out.dir, 'pathways_pseudobulk_', comparison, '.rds'))
+
+fclist <- topTable(
+  de_results[[groupToTest]],
+  coef = "anno1_locGoblet_TI",
+  p.value = 0.5,
+  sort.by = 'logFC',
+  number = 10000
+)
+
+fclist <- fclist[rownames(fclist) %in% genes.above0.05, ]
+fclist$gene <- rownames(fclist)
+
+genes_up <- rownames(fclist)[fclist$logFC > 0.5]
+genes_down <- rownames(fclist)[fclist$logFC < -0.5]
+
+markers_filtered[[comparison]] <- fclist[c(genes_up, genes_down), ]
+pathways[[comparison]] <- resDf 
+markers_selected[[comparison]] <- c(head(genes_up, 50), head(genes_down, 50))
+```
+
+
+```{r}
+human_tfs <- read.table('~/yuzhao1/resource/scenic/utoronto_human_tfs_v_1.01.txt', header = F)[[1]]
+markers_selected[['tfs']] <- genes_afterFiltering %>% unlist() %>% unique() %>% intersect(., human_tfs)
+
+library(openxlsx)
+write.xlsx(markers_filtered, file = paste0(out.dir, 'DEGs-', groupToTest, '.xlsx'))
+write.xlsx(pathways, file = paste0(out.dir, 'DEPs-', groupToTest, '.xlsx'))
+saveRDS(markers_selected, paste0(out.dir, 'DEGs-', groupToTest, '_selected.rds'))
+```
+
+
+### 1, TI vs PP
+
+```{r}
+markers_TIvsPP <- FindMarkers(seurat, ident.1 = group.ti, ident.2 = group.pp, group.by = 'anno1_loc', logfc.threshold = 0)
+saveRDS(markers_TIvsPP , paste0(out.dir, 'markers_wilcoxon_TIvsPP.rds'))
+```
+
+```{r}
+# pathway enrichment
+de_results  <- readRDS(paste0(out.dir, 'markers_wilcoxon_TIvsPP.rds'))
+
+fclist <- de_results[de_results$p_val_adj < 0.05,]
+Res <- myEnrichGSEA_msigdb(GetGenelist(fclist))
+resDf <- do.call("rbind", lapply(Res, function(sobj) sobj@result))
+
+saveRDS(resDf , paste0(out.dir, 'pathways_wilcoxon_TIvsPP.rds'))
+```
+
+
+### 2, POU vs AC
+
+```{r}
+markers_POUvsAC <- FindMarkers(seurat, ident.1 = group.pou, ident.2 = group.ac, group.by = 'anno1_loc', logfc.threshold = 0)
+saveRDS(markers_POUvsAC , paste0(out.dir, 'markers_wilcoxon_POUvsAC.rds'))
+```
+
+```{r}
+# pathway enrichment
+de_results  <- readRDS(paste0(out.dir, 'markers_wilcoxon_POUvsAC.rds'))
+
+fclist <- de_results[de_results$p_val_adj < 0.05,]
+Res <- myEnrichGSEA_msigdb(GetGenelist(fclist))
+resDf <- do.call("rbind", lapply(Res, function(sobj) sobj@result))
+
+saveRDS(resDf, paste0(out.dir, 'pathways_wilcoxon_POUvsAC.rds'))
+```
+
+
+
+### 3, POU vs PP
+
+```{r}
+seurat.sub <- subset(seurat, biopsy_location == 'POU'|biopsy_location == 'PP' )
+```
+
+```{r}
+de_results <- de_genes(seurat_input = seurat.sub,
+                                 classification = 'anno1',
+                                 model_formula = ~  anno1_loc + (1|Patient_ID),
+                                 maineffect = 'anno1_loc',
+                                 pseudo_factors = c('anno1_loc', 'Patient_ID'))
+```
+
+
+```{r}
+saveRDS(de_results , paste0(out.dir, 'markers_pseudobulk_PPvsPOU.rds'))
+```
+
+```{r}
+# pathway
+de_results  <- readRDS(paste0(out.dir, 'markers_pseudobulk_PPvsPOU.rds'))
+
+fclist <- topTable(
+  de_results[[groupToTest]],
+  coef = "anno1_locGoblet_PP",
+  p.value = 0.5,
+  sort.by = 'logFC',
+  number = 10000
+)
+
+Res <- myEnrichGSEA_msigdb(GetGenelist(fclist))
+resDf <- do.call("rbind", lapply(Res, function(sobj) sobj@result))
+
+saveRDS(resDf , paste0(out.dir, 'pathways_pseudobulk_PPvsPOU.rds'))
+```
+
+
+### 4, AC vs TI
+
+
+
+```{r}
+seurat.sub <- subset(seurat, biopsy_location == 'AC'|biopsy_location == 'TI' )
+```
+
+```{r}
+de_results <- de_genes(seurat_input = seurat.sub,
+                                 classification = 'anno1',
+                                 model_formula = ~  anno1_loc + (1|Patient_ID),
+                                 maineffect = 'anno1_loc',
+                                 pseudo_factors = c('anno1_loc', 'Patient_ID'))
+```
+
+
+```{r}
+saveRDS(de_results , paste0(out.dir, 'markers_pseudobulk_TIvsAC.rds'))
+```
+
+```{r}
+# pathway
+de_results  <- readRDS(paste0(out.dir, 'markers_pseudobulk_TIvsAC.rds'))
+
+fclist <- topTable(
+  de_results[[groupToTest]],
+  coef = "anno1_locGoblet_TI",
+  p.value = 0.5,
+  sort.by = 'logFC',
+  number = 10000
+)
+
+Res <- myEnrichGSEA_msigdb(GetGenelist(fclist))
+resDf <- do.call("rbind", lapply(Res, function(sobj) sobj@result))
+
+saveRDS(resDf , paste0(out.dir, 'pathways_pseudobulk_TIvsAC.rds'))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

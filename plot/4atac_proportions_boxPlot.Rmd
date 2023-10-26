@@ -1,0 +1,426 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(ArchR)
+library(stringr)
+library(harmony)
+library(Seurat)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('~/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+```
+
+```{r, include = F, eval=F}
+proj <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_filtered/")
+```
+
+###################### 1. parameters ########################
+
+```{r}
+out.dir <- '~/yuzhao1/work/manu/rc2/plots/4atac_proportions_boxPlot/'
+```
+
+
+###################### 2. prepare data ########################
+
+```{r}
+union <- as.data.frame(proj@cellColData)
+union$Sample_ID <- union$Sample
+```
+
+
+```{r}
+# prepare data
+df1 <- table(union[,c("Sample_ID", 'anno1')]) %>% as.data.frame() 
+meta.anno1.lineage <- unique(union[, c('anno1', 'lineage')])
+meta.sample.location <- unique(union[, c('Sample_ID', 'biopsy_location')])
+meta.lineage.Ncells <- table(union[, c('lineage')])
+meta.lineage.Ncells.loc <- table(union[, c('lineage', 'Sample_ID')]) %>% as.data.frame()
+df1$lineage <- mapvalues(df1$anno1, from = meta.anno1.lineage$anno1, to = meta.anno1.lineage$lineage)
+df1$lineage_Ncells <- mapvalues(df1$lineage, from = names(meta.lineage.Ncells), to = meta.lineage.Ncells)
+
+df1$lineage_Ncells_loc <- mapvalues(paste0(df1$Sample_ID,df1$lineage), 
+                                    from = paste0(meta.lineage.Ncells.loc$Sample_ID, meta.lineage.Ncells.loc$lineage), 
+                                    to = meta.lineage.Ncells.loc$Freq)
+df1$celltype_proportion_per_lineageLoc <- as.numeric(df1$Freq)/as.numeric(df1$lineage_Ncells_loc)
+df1$biopsy_location <- mapvalues(df1$Sample_ID, from = meta.sample.location$Sample_ID, to = meta.sample.location$biopsy_location)
+df1$biopsy_location <- factor(df1$biopsy_location, levels = c('AC','POU','PP','TI'))
+```
+
+###################### 3. plot ########################
+
+```{r}
+celltype <- 'Paneth'
+df2 <- subset(df1, anno1==celltype)
+my_comparisons <- list(c('AC', 'TI'), c('TI', 'POU'))
+
+p <- ggboxplot(df2, x = "biopsy_location", y = "celltype_proportion_per_lineageLoc", fill = "biopsy_location", outlier.shape = NA, 
+          bxp.errorbar=T, bxp.errorbar.width = 0.2)+ 
+  geom_jitter(color="black", size=1.2, alpha=0.9, width = 0.1) +
+  scale_fill_manual(values=manual_colors_rc2_location)+
+  stat_compare_means(PC1 ~ biopsy_location, 
+                     comparisons = my_comparisons,
+                     # label.y = c(0.008, 0.020,0.018, 0.016),
+                     label = "p.signif",
+                     method = "wilcox.test",
+                     paired = F)+
+  theme(axis.text.x = element_text(color = "black", face = "bold", size = 10,),
+        axis.text.y = element_text(color = "black", size = 10, face = "bold"),
+        axis.title = element_text(color = "black", size = 10, angle = 0, face = "bold"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),        legend.position = "none",
+        panel.background = element_rect(fill = "white",
+                                        colour = "black",
+                                        size = 1, linetype = "solid"),
+        plot.title = element_text(hjust = 0.5)
+  )+
+  labs(x = "Biopsy location", y = "Fraction within lineage", title = celltype)+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 0.01))
+
+pdf(paste0(out.dir, celltype, '.pdf'), width = 5, height = 5)
+print(p)
+dev.off()
+```
+
+
+
+
+```{r}
+celltype <- 'TA'
+df2 <- subset(df1, anno1==celltype)
+my_comparisons <- list(c('AC', 'POU'), c('PP','TI'), c('AC', 'TI'), c('PP', 'POU'))
+
+p <- ggboxplot(df2, x = "biopsy_location", y = "celltype_proportion_per_lineageLoc", fill = "biopsy_location", outlier.shape = NA, 
+          bxp.errorbar=T, bxp.errorbar.width = 0.2)+ 
+  geom_jitter(color="black", size=1.2, alpha=0.9, width = 0.1) +
+  scale_fill_manual(values=manual_colors_rc2_location)+
+  stat_compare_means(PC1 ~ biopsy_location, 
+                     comparisons = my_comparisons,
+                     label.y = c(0.22, 0.22, 0.28, 0.25),
+                     label = "p.signif",
+                     method = "wilcox.test",
+                     paired = F)+
+  theme(axis.text.x = element_text(color = "black", face = "bold", size = 10,),
+        axis.text.y = element_text(color = "black", size = 10, face = "bold"),
+        axis.title = element_text(color = "black", size = 10, angle = 0, face = "bold"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),        legend.position = "none",
+        panel.background = element_rect(fill = "white",
+                                        colour = "black",
+                                        size = 1, linetype = "solid"),
+        plot.title = element_text(hjust = 0.5)
+  )+
+  labs(x = "Biopsy location", y = "Fraction within lineage", title = celltype)+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1))
+
+pdf(paste0(out.dir, celltype, '.pdf'), width = 5, height = 5)
+print(p)
+dev.off()
+```
+
+```{r}
+celltype <- 'M-like'
+df2 <- subset(df1, anno1==celltype)
+my_comparisons <- list(c('AC', 'POU'), c('AC', 'PP'), c('AC', 'TI'))
+
+p <- ggboxplot(df2, x = "biopsy_location", y = "celltype_proportion_per_lineageLoc", fill = "biopsy_location", outlier.shape = NA, 
+          bxp.errorbar=T, bxp.errorbar.width = 0.2)+ 
+  geom_jitter(color="black", size=1.2, alpha=0.9, width = 0.1) +
+  scale_fill_manual(values=manual_colors_rc2_location)+
+  stat_compare_means(PC1 ~ biopsy_location, 
+                     comparisons = my_comparisons,
+                     # label.y = c(0.22, 0.22, 0.28, 0.25),
+                     label = "p.signif",
+                     method = "wilcox.test",
+                     paired = F)+
+  theme(axis.text.x = element_text(color = "black", face = "bold", size = 10,),
+        axis.text.y = element_text(color = "black", size = 10, face = "bold"),
+        axis.title = element_text(color = "black", size = 10, angle = 0, face = "bold"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),        legend.position = "none",
+        panel.background = element_rect(fill = "white",
+                                        colour = "black",
+                                        size = 1, linetype = "solid"),
+        plot.title = element_text(hjust = 0.5)
+  )+
+  labs(x = "Biopsy location", y = "Fraction within lineage", title = celltype)+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1))
+
+pdf(paste0(out.dir, celltype, '.pdf'), width = 5, height = 5)
+print(p)
+dev.off()
+```
+
+
+```{r}
+celltype <- 'Treg'
+df2 <- subset(df1, anno1==celltype)
+my_comparisons <- list(c('AC', 'POU'), c('PP','TI'), c('AC', 'TI'), c('PP', 'POU'))
+
+p <- ggboxplot(df2, x = "biopsy_location", y = "celltype_proportion_per_lineageLoc", fill = "biopsy_location", outlier.shape = NA, 
+          bxp.errorbar=T, bxp.errorbar.width = 0.2)+ 
+  geom_jitter(color="black", size=1.2, alpha=0.9, width = 0.1) +
+  scale_fill_manual(values=manual_colors_rc2_location)+
+  stat_compare_means(PC1 ~ biopsy_location, 
+                     comparisons = my_comparisons,
+                     label.y = c(0.18, 0.18, 0.25, 0.2),
+                     label = "p.signif",
+                     method = "wilcox.test",
+                     paired = F)+
+  theme(axis.text.x = element_text(color = "black", face = "bold", size = 10,),
+        axis.text.y = element_text(color = "black", size = 10, face = "bold"),
+        axis.title = element_text(color = "black", size = 10, angle = 0, face = "bold"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),        legend.position = "none",
+        panel.background = element_rect(fill = "white",
+                                        colour = "black",
+                                        size = 1, linetype = "solid"),
+        plot.title = element_text(hjust = 0.5)
+  )+
+  labs(x = "Biopsy location", y = "Fraction within lineage", title = celltype)+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1))
+
+pdf(paste0(out.dir, celltype, '.pdf'), width = 5, height = 5)
+print(p)
+dev.off()
+```
+
+
+```{r}
+celltype <- 'KLRG1+ CD8 Trm'
+df2 <- subset(df1, anno1==celltype)
+my_comparisons <- list(c('TI', 'POU'), c('PP','TI'), c('AC', 'TI'))
+
+p <- ggboxplot(df2, x = "biopsy_location", y = "celltype_proportion_per_lineageLoc", fill = "biopsy_location", outlier.shape = NA, 
+          bxp.errorbar=T, bxp.errorbar.width = 0.2)+ 
+  geom_jitter(color="black", size=1.2, alpha=0.9, width = 0.1) +
+  scale_fill_manual(values=manual_colors_rc2_location)+
+  stat_compare_means(PC1 ~ biopsy_location, 
+                     comparisons = my_comparisons,
+                     label.y = c(0.15,0.13,0.17),
+                     label = "p.signif",
+                     method = "wilcox.test",
+                     paired = F)+
+  theme(axis.text.x = element_text(color = "black", face = "bold", size = 10,),
+        axis.text.y = element_text(color = "black", size = 10, face = "bold"),
+        axis.title = element_text(color = "black", size = 10, angle = 0, face = "bold"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),        legend.position = "none",
+        panel.background = element_rect(fill = "white",
+                                        colour = "black",
+                                        size = 1, linetype = "solid"),
+        plot.title = element_text(hjust = 0.5)
+  )+
+  labs(x = "Biopsy location", y = "Fraction within lineage", title = celltype)+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1))
+
+pdf(paste0(out.dir, 'KLRG1 CD8 Trm', '.pdf'), width = 5, height = 5)
+print(p)
+dev.off()
+```
+
+
+
+```{r}
+celltype <- 'NK T'
+df2 <- subset(df1, anno1==celltype)
+my_comparisons <- list(c('AC', 'POU'), c('PP','TI'), c('PP', 'POU'))
+
+p <- ggboxplot(df2, x = "biopsy_location", y = "celltype_proportion_per_lineageLoc", fill = "biopsy_location", outlier.shape = NA, 
+          bxp.errorbar=T, bxp.errorbar.width = 0.2)+ 
+  geom_jitter(color="black", size=1.2, alpha=0.9, width = 0.1) +
+  scale_fill_manual(values=manual_colors_rc2_location)+
+  stat_compare_means(PC1 ~ biopsy_location, 
+                     comparisons = my_comparisons,
+                     label.y = c(0.036, 0.012, 0.038),
+                     label = "p.signif",
+                     method = "wilcox.test",
+                     paired = F)+
+  theme(axis.text.x = element_text(color = "black", face = "bold", size = 10,),
+        axis.text.y = element_text(color = "black", size = 10, face = "bold"),
+        axis.title = element_text(color = "black", size = 10, angle = 0, face = "bold"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),        legend.position = "none",
+        panel.background = element_rect(fill = "white",
+                                        colour = "black",
+                                        size = 1, linetype = "solid"),
+        plot.title = element_text(hjust = 0.5)
+  )+
+  labs(x = "Biopsy location", y = "Fraction within lineage", title = celltype)+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1))
+
+pdf(paste0(out.dir, celltype, '.pdf'), width = 5, height = 5)
+print(p)
+dev.off()
+```
+
+
+```{r}
+celltype <- 'CD103+ CD4 Trm'
+df2 <- subset(df1, anno1==celltype)
+my_comparisons <- list(c('AC', 'POU'), c('AC', 'PP'), c('AC', 'TI'))
+
+p <- ggboxplot(df2, x = "biopsy_location", y = "celltype_proportion_per_lineageLoc", fill = "biopsy_location", outlier.shape = NA, 
+          bxp.errorbar=T, bxp.errorbar.width = 0.2)+ 
+  geom_jitter(color="black", size=1.2, alpha=0.9, width = 0.1) +
+  scale_fill_manual(values=manual_colors_rc2_location)+
+  stat_compare_means(PC1 ~ biopsy_location, 
+                     comparisons = my_comparisons,
+                     # label.y = c(0.036, 0.012, 0.038),
+                     label = "p.signif",
+                     method = "wilcox.test",
+                     paired = F)+
+  theme(axis.text.x = element_text(color = "black", face = "bold", size = 10,),
+        axis.text.y = element_text(color = "black", size = 10, face = "bold"),
+        axis.title = element_text(color = "black", size = 10, angle = 0, face = "bold"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),        legend.position = "none",
+        panel.background = element_rect(fill = "white",
+                                        colour = "black",
+                                        size = 1, linetype = "solid"),
+        plot.title = element_text(hjust = 0.5)
+  )+
+  labs(x = "Biopsy location", y = "Fraction within lineage", title = celltype)+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1))
+
+pdf(paste0(out.dir, 'CD103 CD4 Trm', '.pdf'), width = 5, height = 5)
+print(p)
+dev.off()
+```
+
+
+
+
+
+
+```{r}
+celltype <- 'Stromal-2'
+df2 <- subset(df1, anno1==celltype)
+my_comparisons <- list(c('AC', 'POU'), c('POU','PP'), c('PP', 'TI'))
+
+p <- ggboxplot(df2, x = "biopsy_location", y = "celltype_proportion_per_lineageLoc", fill = "biopsy_location", outlier.shape = NA, 
+          bxp.errorbar=T, bxp.errorbar.width = 0.2)+ 
+  geom_jitter(color="black", size=1.2, alpha=0.9, width = 0.1) +
+  scale_fill_manual(values=manual_colors_rc2_location)+
+  stat_compare_means(PC1 ~ biopsy_location, 
+                     comparisons = my_comparisons,
+                     label.y = c(0.15, 0.1, 0.05),
+                     label = "p.signif",
+                     method = "wilcox.test",
+                     paired = F)+
+  theme(axis.text.x = element_text(color = "black", face = "bold", size = 10,),
+        axis.text.y = element_text(color = "black", size = 10, face = "bold"),
+        axis.title = element_text(color = "black", size = 10, angle = 0, face = "bold"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),        legend.position = "none",
+        panel.background = element_rect(fill = "white",
+                                        colour = "black",
+                                        size = 1, linetype = "solid"),
+        plot.title = element_text(hjust = 0.5)
+  )+
+  labs(x = "Biopsy location", y = "Fraction within lineage", title = celltype)+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1))
+
+pdf(paste0(out.dir, celltype, '.pdf'), width = 5, height = 5)
+print(p)
+dev.off()
+```
+
+
+```{r}
+celltype <- 'Stromal-3'
+df2 <- subset(df1, anno1==celltype)
+my_comparisons <- list(c('AC', 'POU'), c('PP','TI'), c('AC', 'TI'), c('PP', 'POU'))
+
+p <- ggboxplot(df2, x = "biopsy_location", y = "celltype_proportion_per_lineageLoc", fill = "biopsy_location", outlier.shape = NA, 
+          bxp.errorbar=T, bxp.errorbar.width = 0.2)+ 
+  geom_jitter(color="black", size=1.2, alpha=0.9, width = 0.1) +
+  scale_fill_manual(values=manual_colors_rc2_location)+
+  stat_compare_means(PC1 ~ biopsy_location, 
+                     comparisons = my_comparisons,
+                     label.y = c(0.25, 0.2, 0.28, 0.15),
+                     label = "p.signif",
+                     method = "wilcox.test",
+                     paired = F)+
+  theme(axis.text.x = element_text(color = "black", face = "bold", size = 10,),
+        axis.text.y = element_text(color = "black", size = 10, face = "bold"),
+        axis.title = element_text(color = "black", size = 10, angle = 0, face = "bold"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),        legend.position = "none",
+        panel.background = element_rect(fill = "white",
+                                        colour = "black",
+                                        size = 1, linetype = "solid"),
+        plot.title = element_text(hjust = 0.5)
+  )+
+  labs(x = "Biopsy location", y = "Fraction within lineage", title = celltype)+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1))
+
+pdf(paste0(out.dir, celltype, '.pdf'), width = 5, height = 5)
+print(p)
+dev.off()
+```
+
+
+```{r}
+celltype <- 'Neutrophil'
+df2 <- subset(df1, anno1==celltype)
+my_comparisons <- list(c('AC', 'POU'), c('PP','TI'), c('AC', 'TI'), c('PP', 'POU'))
+
+p <- ggboxplot(df2, x = "biopsy_location", y = "celltype_proportion_per_lineageLoc", fill = "biopsy_location", outlier.shape = NA, 
+          bxp.errorbar=T, bxp.errorbar.width = 0.2)+ 
+  geom_jitter(color="black", size=1.2, alpha=0.9, width = 0.1) +
+  scale_fill_manual(values=manual_colors_rc2_location)+
+  stat_compare_means(PC1 ~ biopsy_location, 
+                     comparisons = my_comparisons,
+                     # label.y = c(0.25, 0.2, 0.28, 0.15),
+                     label = "p.signif",
+                     method = "wilcox.test",
+                     paired = F)+
+  theme(axis.text.x = element_text(color = "black", face = "bold", size = 10,),
+        axis.text.y = element_text(color = "black", size = 10, face = "bold"),
+        axis.title = element_text(color = "black", size = 10, angle = 0, face = "bold"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),        legend.position = "none",
+        panel.background = element_rect(fill = "white",
+                                        colour = "black",
+                                        size = 1, linetype = "solid"),
+        plot.title = element_text(hjust = 0.5)
+  )+
+  labs(x = "Biopsy location", y = "Fraction within lineage", title = celltype)+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1))
+
+pdf(paste0(out.dir, celltype, '.pdf'), width = 5, height = 5)
+print(p)
+dev.off()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

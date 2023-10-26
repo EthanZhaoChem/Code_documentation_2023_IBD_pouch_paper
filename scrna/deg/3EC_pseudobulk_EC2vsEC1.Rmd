@@ -1,0 +1,80 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(limma)
+library(edgeR)
+library(variancePartition)
+library(BiocParallel)
+library(tidyverse)
+
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+source('/project/gca/yuzhao1/scripts/seurat/deg_pseudobulk.R')
+out.dir <- '/project/gca/yuzhao1/work/manu/rc2/plots/'
+```
+
+```{r, include = F, eval=F}
+# union <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/gut_filtered.rds')
+epithelial <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/epithelial3.rds')
+```
+
+### EC2 vs EC1
+
+```{r}
+seurat <- subset(epithelial, cells = Cells(epithelial)[epithelial$anno1 %in% c('EC1-1','EC1-2','EC2-1','EC2-2')])
+```
+
+
+```{r}
+seurat$anno1.sub <- seurat$anno1
+seurat$anno1.sub[seurat$anno1.sub %in% c("EC1-1", "EC1-2")] <- 'EC1'
+seurat$anno1.sub[seurat$anno1.sub %in% c("EC2-1", "EC2-2")] <- 'EC2'
+seurat$anno1 <- 'EC'
+unique(seurat$anno1)
+unique(seurat$anno1.sub)
+table(seurat@meta.data[, c('Patient_ID', 'anno1.sub')])
+```
+
+```{r}
+# add metadata
+metadata <- read.csv('~/yuzhao1/work/final_RC2rna/metadata/supp_table1.csv')
+seurat$age <- mapvalues(seurat$Patient_ID, from = metadata$Patient.ID, metadata$Age) %>% as.numeric()
+seurat$gender <- mapvalues(seurat$Patient_ID, from = metadata$Patient.ID, metadata$Gender)
+```
+
+```{r}
+de_results <- de_genes(seurat_input = seurat,
+                                 classification = 'anno1',
+                                 model_formula = ~  anno1.sub + (1|Patient_ID),
+                                 maineffect = 'anno1.sub',
+                                 pseudo_factors = c('anno1.sub', 'Patient_ID'))
+```
+
+
+```{r}
+saveRDS(de_results ,'~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/de_results_EC2vs1_bulk.rds')
+```
+
+```{r}
+topTable(de_results[["EC"]],
+         coef="anno1.subEC2",
+         p.value = 0.05,
+         sort.by = 'logFC',
+         number = 1000000)
+```
+

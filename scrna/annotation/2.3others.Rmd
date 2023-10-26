@@ -1,0 +1,335 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+knitr::opts_knit$set(root.dir = '/home/yuzhao1/gca/yuzhao1/work/gca_rna/')
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+# others <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/others1.rds')
+```
+
+```{r}
+# # subset others2 to t,b,myeloid based on res1.5
+# cs.t <- as.character(c(0,3,6,7,8,11,12,13,23,28))
+# cs.mye <- as.character(c(14,15,16,19,21,22))
+# cs.b <- as.character(c(1,2,4,5,9,10,17,18,20,24,25,26,27,29))
+# tcell <- subset(others, cells = Cells(others)[which(others$seurat_clusters_res1.5 %in% cs.t)])
+# myeloid <- subset(others, cells = Cells(others)[which(others$seurat_clusters_res1.5 %in% cs.mye)])
+# bcell <- subset(others, cells = Cells(others)[which(others$seurat_clusters_res1.5 %in% cs.b)])
+```
+
+```{r}
+# saveRDS(others, '~/yuzhao1/work/final_RC2rna/annotation/rds/others2.rds') 
+# saveRDS(tcell, '~/yuzhao1/work/final_RC2rna/annotation/rds/tcell1.rds') 
+# saveRDS(bcell, '~/yuzhao1/work/final_RC2rna/annotation/rds/bcell1.rds') 
+# saveRDS(myeloid, '~/yuzhao1/work/final_RC2rna/annotation/rds/myeloid1.rds') 
+```
+
+
+```{r}
+# # decide whether to remove clusters
+# columns_to_remove <- grep("seurat_cluster", names(others@meta.data))
+# others@meta.data <- others@meta.data[,-columns_to_remove]
+# columns_to_remove <- grep("RNA_snn_", names(others@meta.data))
+# others@meta.data <- others@meta.data[,-columns_to_remove]
+```
+
+
+```{r}
+# # filter LQ cells from previous clustering results, and then remove precious labels, from others1 to others2
+# # LQ: remove others-epithelial doublets
+# xx <- Cells(others)[which(!others$seurat_clusters_res1 %in% c(16))]
+# others_filtered <- subset(others, cells = xx)
+# columns_to_remove <- grep("seurat_cluster", names(others_filtered@meta.data))
+# others_filtered@meta.data <- others_filtered@meta.data[,-columns_to_remove]
+# columns_to_remove <- grep("RNA_snn_", names(others_filtered@meta.data))
+# others_filtered@meta.data <- others_filtered@meta.data[,-columns_to_remove]
+```
+
+
+```{r, eval=F}
+# # save others2 again after second round of processing
+# saveRDS(others, '~/yuzhao1/work/final_RC2rna/annotation/rds/others2.rds')
+# saveRDS(others_filtered, '~/yuzhao1/work/final_RC2rna/annotation/rds/others3.rds')
+```
+
+
+```{r, eval=F}
+# # filter based on results of subsets
+# others <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/others2.rds')
+# tcell <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/tcell2.rds')
+# bcell <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/bcell3.rds')
+# myeloid <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/myeloid3.rds')
+# xx <- c(Cells(tcell), Cells(bcell), Cells(myeloid))
+# xx.anno1 <- c(tcell$anno1, bcell$anno1, myeloid$anno1)
+# 
+# others_filtered <- subset(others, cells = xx)
+# columns_to_remove <- grep("seurat_cluster", names(others_filtered@meta.data))
+# others_filtered@meta.data <- others_filtered@meta.data[,-columns_to_remove]
+# columns_to_remove <- grep("RNA_snn_", names(others_filtered@meta.data))
+# others_filtered@meta.data <- others_filtered@meta.data[,-columns_to_remove]
+# 
+# others_filtered$anno1 <- xx.anno1
+# saveRDS(others_filtered, '~/yuzhao1/work/final_RC2rna/annotation/rds/others3.rds') 
+
+```
+
+```{r}
+df_annotation_res1<- list(
+'0' = 'Arterial', # PECAM1, HEY1, EFNB2
+'1' = 'Venous', # ACKR1, VWF
+'2' = 'Stromal-1', # ADAMDEC1
+'3' = 'Stromal-1',
+'4' = 'Arterial',
+'5' = 'Stromal-1',
+'6' = 'Pericyte', # NOTCH3, MCAM (CD146) and RGS5
+'7' = 'Stromal-3',
+'8' = 'Glial', # S100B, NRXN1
+'9' = 'Myofibroblast', # ACTA2, TAGLN, DCN, DES-
+'10' = 'Stromal-2', 
+'11' = 'Lymphatic endothelium', # PROX1, LYVE1, CCL21
+'12' = 'Stromal-3',
+'13' = 'Stromal-1',
+'14' = 'Stromal-1',
+'15' = 'Arterial',
+'16' = 'Contractile pericyte', # PLN, RERGL, KCNAB1
+'17' = 'Stromal-1',
+'18' = 'Smooth muscle') # DES, ACTA2, TAGLN, CNN1
+
+others$anno1 <- mapvalues(as.character(others$seurat_clusters_res1), from = names(df_annotation_res1),
+                         to = df_annotation_res1) %>% unlist()
+```
+
+
+```{r}
+# saveRDS(others, '~/yuzhao1/work/final_RC2rna/annotation/rds/others3.rds') 
+others <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/others3.rds')
+```
+
+```{r}
+# ### update anno1_loc
+# seurat <- others
+# seurat$anno1_loc <- paste0(seurat$anno1, '-', seurat$biopsy_location)
+# seurat$anno1_loc[seurat$anno1 %in% c("Stromal-1", "Stromal-2", "Stromal-3") & seurat$biopsy_location =='POU'] <- 'Stromal-POU'
+# seurat$anno1_loc[seurat$anno1 %in% c("Stromal-1", "Stromal-2", "Stromal-3") & seurat$biopsy_location =='PP'] <- 'Stromal-PP'
+# seurat$anno1_loc[seurat$anno1 %in% c("Stromal-1", "Stromal-2", "Stromal-3") & seurat$biopsy_location =='TI'] <- 'Stromal-TI'
+# seurat$anno1_loc[seurat$anno1 %in% c("Stromal-1", "Stromal-2", "Stromal-3") & seurat$biopsy_location =='AC'] <- 'Stromal-AC'
+# 
+# # saveRDS(seurat, '~/yuzhao1/work/final_RC2rna/annotation/rds/others3.rds')
+```
+
+### workflow
+
+
+```{r, include = F, eval=F}
+# others3 has all been preprocessed, but kept using the embedding and clustering results of others2 (best accuray for cell-type markers)
+others <- NormalizeData(others)
+others <- FindVariableFeatures(others, selection.method = "vst", nfeatures = 2000)
+others <- ScaleData(others, vars.to.regress = c('percent.mt', 'nCount_RNA', 'CC.Difference'))
+others <- RunPCA(others, npcs = 50)
+others <- RunHarmony(others, group.by.vars = 'Patient_ID', max.iter.harmony = 20)
+others <- FindNeighbors(others, reduction = 'harmony', dims = 1:50)
+
+# this specific embedding captures the clustering results very well.
+others <- RunUMAP(others,  dims = 1:50, reduction = 'harmony', reduction.name = 'harmony_umap',
+                      min.dist = 0.5, n.neighbors = 50, seed.use = 0,
+                      reduction.key = 'UMAP_')
+
+others <- FindClusters(others, resolution = 0.2)
+others$seurat_clusters_res0.2 <- Idents(others)
+
+others <- FindClusters(others, resolution = 0.3)
+others$seurat_clusters_res0.3 <- Idents(others)
+
+others <- FindClusters(others, resolution = 0.5)
+others$seurat_clusters_res0.5 <- Idents(others)
+
+others <- FindClusters(others, resolution = 0.6)
+others$seurat_clusters_res0.6 <- Idents(others)
+
+others <- FindClusters(others, resolution = 0.7)
+others$seurat_clusters_res0.7 <- Idents(others)
+
+others <- FindClusters(others, resolution = 0.8)
+others$seurat_clusters_res0.8 <- Idents(others)
+
+others <- FindClusters(others, resolution = 1)
+others$seurat_clusters_res1 <- Idents(others)
+
+others <- FindClusters(others, resolution = 1.2)
+others$seurat_clusters_res1.2 <- Idents(others)
+
+others <- FindClusters(others, resolution = 1.5)
+others$seurat_clusters_res1.5 <- Idents(others)
+
+others <- FindClusters(others, resolution = 2)
+others$seurat_clusters_res2 <- Idents(others)
+
+others <- FindClusters(others, resolution = 2.5)
+others$seurat_clusters_res2.5 <- Idents(others)
+```
+
+```{r}
+ElbowPlot(others, ndims = 50)
+```
+
+
+```{r}
+xx <- list()
+```
+
+```{r}
+# do parallel computing
+clusters_to_test <- unique(others$seurat_clusters_res1)
+for(cluster in clusters_to_test ){
+  xx[[cluster]] <- FindMarkers(others, ident.1 = cluster, min.pct = 0.2, logfc.threshold = 1, group.by = 'seurat_clusters_res1')
+  saveRDS(xx[[cluster]], paste0('~/yuzhao1/work/final_RC2rna/annotation/markers/others3_res1/cluster_', cluster, '.rds'))
+}
+```
+
+```{r}
+cluster <- '10'
+View(readRDS(paste0('~/yuzhao1/work/final_RC2rna/annotation/markers/others3_res1/cluster_', cluster, '.rds')))
+```
+
+```{r}
+xx <- FindMarkers(others, ident.1 = c('Glial'), min.pct = 0.1, logfc.threshold = 0.5, group.by = 'anno1')
+View(xx)
+```
+
+```{r}
+# quickly check marker
+feature <-'ITGA8'
+df <- data.frame(others@meta.data)
+df$embedding1 <- data.frame(others@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(others@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$feature_to_plot <- FetchData(others, feature) %>% unlist()
+plot_df_umap_custom(df, plot_feature = T)
+
+VlnPlot(others, feature, group.by = 'seurat_clusters_res1', pt.size = 0)
+
+```
+
+
+### Check clustering results
+
+```{r}
+# others <- RunUMAP(others,  dims = 1:30, reduction = 'harmony', reduction.name = 'harmony_umap', 
+#                       min.dist = 0.5, n.neighbors = 50, seed.use = 34196,
+#                       repulsion.strength = 1.1,
+#                       reduction.key = 'UMAP_')
+
+# others <- RunUMAP(others,  dims = 1:30, reduction = 'harmony', reduction.name = 'harmony_umap',
+#                       min.dist = 0.1, n.neighbors = 10, reduction.key = 'UMAP_',
+#                       seed.use = 34196, n.epochs = 500,
+#                       set.op.mix.ratio = 0.5, local.connectivity = 2, repulsion.strength = 0.5, negative.sample.rate = 20,
+#                       spread = 0.5)
+
+others <- RunUMAP(others,  dims = 1:50, reduction = 'harmony', reduction.name = 'harmony_umap',
+                      min.dist = 0.3, n.neighbors = 30, seed.use = 5, 
+                      repulsion.strength = 1.0, n.epochs = 500, negative.sample.rate = 5, 
+                      reduction.key = 'UMAP_')
+
+```
+
+
+```{r, fig.height=7, fig.width=7}
+df <- data.frame(others@meta.data)
+df$embedding1 <- data.frame(others@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(others@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$cluster_name <- others$seurat_clusters_res1
+plot_df_umap_custom(df, show.label = 'name')
+```
+
+```{r, fig.height=9, fig.width=8.5}
+df <- data.frame(others@meta.data)
+df$embedding1 <- data.frame(others@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(others@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$cluster_name <- others$anno1
+p<-plot_df_umap_custom(df, show.label = 'name')
+p
+
+png('~/yuzhao1/work/final_RC2rna/annotation/plots/umap_others.png',res = 300, height = 2300, width = 2000)
+p
+dev.off()
+```
+
+```{r, fig.height=11, fig.width=10}
+df <- data.frame(others@meta.data)
+df$embedding1 <- data.frame(others@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(others@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$cluster_name <- others$anno1
+p<- plot_df_umap_custom(df, show.label = 'name') +
+  facet_wrap(~ biopsy_location) +
+  theme(
+    strip.background = element_rect(fill = "white", colour = "white"),
+    strip.text = element_text(size = 12)
+  )
+p
+png('~/yuzhao1/work/final_RC2rna/annotation/plots/umap_others_loc.png',res = 300, height = 2500, width = 2300)
+plot_df_umap_custom(df, show.label = 'na') +
+  facet_wrap(~ biopsy_location) +
+  theme(
+    strip.background = element_rect(fill = "white", colour = "white"),
+    strip.text = element_text(size = 12)
+  )
+dev.off()
+```
+
+
+```{r, fig.height=13, fig.width=12}
+others@meta.data$Sample_ID_Corrected <- factor(others@meta.data$Sample_ID_Corrected,
+                                                   levels = c("HA01-TI","HA02-TI","HA04-TI","HA50TI","HA51TI","HA55TI",
+                                                              "HA01-AC","HA02-AC","HA04-AC","HA50AC","HA51AC","HA55AC",
+                                                              "OR101-PP","OR102-PP","OR109-PP","OR43-PP","OR48-PP","OR72PP",
+                                                              "OR101-POU","OR102-POU","OR109-POU","OR43-POU","OR48-POU","OR72POU"
+                                                              ))
+df <- data.frame(others@meta.data)
+df$embedding1 <- data.frame(others@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(others@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$cluster_name <- others$anno1
+
+p<- plot_df_umap_custom(df, show.label = 'name') +
+  facet_wrap(~ Sample_ID_Corrected, ncol = 6) +
+  theme(
+    strip.background = element_rect(fill = "white", colour = "white"),
+    strip.text = element_text(size = 12)
+  )
+p
+png('~/yuzhao1/work/final_RC2rna/annotation/plots/umap_others_sample.png',res = 300, height = 5000, width = 8000)
+p
+dev.off()
+```
+
+#### Check specific markers
+
+
+```{r}
+feature <- 'NRG1'
+df <- data.frame(others@meta.data)
+df$embedding1 <- data.frame(others@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(others@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$feature_to_plot <- FetchData(others, feature) %>% unlist()
+plot_df_umap_custom(df, plot_feature = T)
+
+VlnPlot(others, feature, group.by = 'seurat_clusters_res1', pt.size = 0)
+```
+
+
+
+
+
+

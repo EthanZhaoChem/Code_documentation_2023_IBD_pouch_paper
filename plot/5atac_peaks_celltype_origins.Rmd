@@ -1,0 +1,234 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(ArchR)
+library(parallel)
+library(BSgenome.Hsapiens.UCSC.hg38)
+library(ComplexHeatmap)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+source('~/yuzhao1/scripts/helper_archr.R')
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('~/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+source('~/yuzhao1/work/manu/rc2/scripts/rna_deg_markers.R')
+```
+
+```{r}
+proj<- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_epithelial_filtered2/")
+```
+
+```{r}
+out.dir <- '~/yuzhao1/work/manu/rc2/plots/5atac_peaks_celltype_origins/'
+```
+
+
+### plot
+```{r}
+DARs_plot <- readRDS('~/yuzhao1/work/final_RC2atac/peaks/EC_DAR_regions_DifferentContrastLists_ScriptInManuFolder.rds')
+peak.mtx.S4 <- readRDS('~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_epithelial_filtered2/peakMat_Anno2_binarized.rds')
+```
+
+
+```{r}
+# 1.1 if testing pou2 vs pou1
+title.save <- 'pouchcells_peaks_pou2vspou1'
+test_peaks <- DARs_plot$EC_POU2vsPOU1
+test_peaks %<>% gsub(':','_',.) %>% gsub('-','_',.)
+all_peaks_ranges <- ranges(proj@peakSet)
+all_peaks <- paste0(seqnames(proj@peakSet), '_', start(all_peaks_ranges), '_', end(all_peaks_ranges))
+idx <- match(test_peaks, all_peaks)
+
+peak_origins <- proj@peakSet[idx,]
+celltype_origins <- strsplit(peak_origins$GroupReplicate, '._.', 1) %>% sapply(.,`[[`,1)
+sort(table(celltype_origins), decreasing = T)
+
+
+# 1.2 if testing pou1 vs pou2
+title.save <- 'pouchcells_peaks_pou1vspou2'
+test_peaks <- DARs_plot$EC_POU1vsPOU2
+test_peaks %<>% gsub(':','_',.) %>% gsub('-','_',.)
+all_peaks_ranges <- ranges(proj@peakSet)
+all_peaks <- paste0(seqnames(proj@peakSet), '_', start(all_peaks_ranges), '_', end(all_peaks_ranges))
+idx <- match(test_peaks, all_peaks)
+
+peak_origins <- proj@peakSet[idx,]
+celltype_origins <- strsplit(peak_origins$GroupReplicate, '._.', 1) %>% sapply(.,`[[`,1)
+sort(table(celltype_origins), decreasing = T)
+
+# 2 subset the dar peak mtx
+peak.mtx <- peak.mtx.S4@assays@data$PeakMatrix
+mtx.rowranges <- peak.mtx.S4@rowRanges
+mtx.rownames <- paste0(seqnames(mtx.rowranges), '_', start(mtx.rowranges), '_', end(mtx.rowranges))
+rownames(peak.mtx) <- mtx.rownames
+
+# subset the mtx for cells in pouch 
+pouch_cells <- proj$cellNames[proj$biopsy_location=='POU']
+peak.mtx <- peak.mtx[, pouch_cells]
+
+# subset the peak-cellname matrix for dar peaks
+test.dar.mtx <- peak.mtx[test_peaks, ]
+
+# the cell types corresponding to these cellnames
+col.celltypes <- mapvalues(colnames(test.dar.mtx), proj$cellNames, proj$anno2, warn_missing = F)
+```
+
+```{r}
+# 3. calculate the percentage of cells with this peak for each cell type
+anno2_celltypes <- names(custom_colors_atac_epithelial_anno2)
+
+# calculate the number of cells per cell type
+nCells_anno2_df <- data.frame(table(proj$anno2))
+nCells_anno2 <- nCells_anno2_df$Freq
+names(nCells_anno2) <- nCells_anno2_df$Var1
+nCells_anno2 <- nCells_anno2[anno2_celltypes]
+
+# set a empty peak- celltype calls df
+peak_celltypecalls_df <- data.frame(matrix(0, nrow = nrow(test.dar.mtx), ncol = length(anno2_celltypes)))
+rownames(peak_celltypecalls_df) <- rownames(test.dar.mtx)
+colnames(peak_celltypecalls_df) <- anno2_celltypes
+
+for(i in 1:nrow(peak_celltypecalls_df)){
+    singlePeak <- rownames(test.dar.mtx)[[i]]
+    singlePeak.celltypes <- data.frame(table(col.celltypes[which(test.dar.mtx[i,] != 0)])) # the celltypes for this peak
+    
+    # for cell types with peak calls, set their number
+    # for cell types with peak calls, set their name shows up
+    singlePeak.celltypecalls <- mapvalues(colnames(peak_celltypecalls_df), 
+                                          singlePeak.celltypes$Var1,
+                                          singlePeak.celltypes$Freq, 
+                                          warn_missing = F)
+    
+    # for the cell types that have no peak calls, set zero
+    singlePeak.celltypecalls <- mapvalues(singlePeak.celltypecalls, 
+                                          colnames(peak_celltypecalls_df),
+                                          rep(0, ncol(peak_celltypecalls_df)),
+                                          warn_missing = F)
+    singlePeak.celltypecalls %<>% as.numeric()
+    singlePeak.celltypecalls_percentage <- singlePeak.celltypecalls/nCells_anno2
+    
+    # set the row for this peak
+    peak_celltypecalls_df[i,] <- singlePeak.celltypecalls_percentage
+    
+    # show process
+    cat(i,'\n')
+}
+saveRDS(peak_celltypecalls_df, paste0(out.dir, title.save, '.rds'))
+```
+
+```{r}
+title.save <- "pouchcells_peaks_pou2vspou1"
+peak_celltypecalls_df <- readRDS(paste0(out.dir, title.save, '.rds'))
+
+pal <- ArchRPalettes$blueYellow
+threshold  <- 2
+col_fun <- colorRamp2(seq(-threshold, threshold, 2*threshold/(length(pal)-1)), pal)
+
+df <- t(scale(t(peak_celltypecalls_df)))
+pdf(paste0(out.dir, title.save , '_heatmap.pdf'), width = 5, height = 10)
+p1 <- Heatmap(df, 
+              col = col_fun,
+              cluster_columns = F, cluster_rows = T,
+              show_row_dend = F, show_column_dend = F, show_row_names = F,
+              
+              # row_split = factor(paste0('group', df_levels[['group']]),
+              #                    levels = paste0('group', 1:11)),
+              
+              row_title = NULL,
+              row_gap = unit(1, "mm"), column_gap = unit(0, "mm"), 
+              border = T,
+              border_gp = gpar(col = "black", lty = 1, lwd = 0),
+              
+              heatmap_legend_param = list(title = "proportion of cells with OCR, z score"),
+              use_raster = F)
+
+print(p1)
+dev.off()
+```
+
+# check the overlap of dars with original peak calls
+
+```{r}
+EC1.1.peaks <- readRDS('~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_epithelial_filtered2/PeakCalls/anno1/EC1.1-reproduciblePeaks.gr.rds')
+EC1.2.peaks <- readRDS('~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_epithelial_filtered2/PeakCalls/anno1/EC1.2-reproduciblePeaks.gr.rds')
+EC2.1.peaks <- readRDS('~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_epithelial_filtered2/PeakCalls/anno1/EC2.1-reproduciblePeaks.gr.rds')
+EC2.2.peaks <- readRDS('~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_epithelial_filtered2/PeakCalls/anno1/EC2.2-reproduciblePeaks.gr.rds')
+
+ec1_gr <- GRanges(
+  seqnames = c(seqnames(EC1.1.peaks), seqnames(EC1.2.peaks)),
+  ranges = IRanges(start = c(start(EC1.1.peaks), start(EC1.2.peaks)), 
+                   end = c(end(EC1.1.peaks), end(EC1.2.peaks))),
+  strand = c("*")
+)
+
+ec2_gr <- GRanges(
+  seqnames = c(seqnames(EC2.1.peaks), seqnames(EC2.2.peaks)),
+  ranges = IRanges(start = c(start(EC2.1.peaks), start(EC2.2.peaks)), 
+                   end = c(end(EC2.1.peaks), end(EC2.2.peaks))),
+  strand = c("*")
+)
+
+```
+
+```{r}
+test_peaks <- DARs_plot$EC_POU2vsPOU1
+test_peaks %<>% gsub(':','_',.) %>% gsub('-','_',.)
+all_peaks_ranges <- ranges(proj@peakSet)
+all_peaks <- paste0(seqnames(proj@peakSet), '_', start(all_peaks_ranges), '_', end(all_peaks_ranges))
+idx <- match(test_peaks, all_peaks)
+dar.gr <- proj@peakSet[idx,]
+```
+
+
+```{r}
+# returns only the ranges in the first object that have overlaps with any ranges in the second object
+subsetByOverlaps(dar.gr, ec1_gr)
+```
+
+```{r}
+# check the quality of these peaks called in EC celltypes that have an overlap with dar
+xx <- subsetByOverlaps(EC1.2.peaks, dar.gr)
+ggplot(data.frame(x = EC1.2.peaks$score), aes(x = x)) +
+  geom_density() +
+  xlim(0, 500)
+ggplot(data.frame(x = xx$score), aes(x = x)) +
+  geom_density() +
+  xlim(0, 500)
+```
+
+
+```{r}
+# replicateScoreQuantile
+# check the quality of these peaks called in EC celltypes that have an overlap with dar
+xx <- subsetByOverlaps(EC2.2.peaks, dar.gr)
+ggplot(data.frame(x = EC2.2.peaks$groupScoreQuantile), aes(x = x)) +
+  geom_density() +
+  xlim(0, 1)
+ggplot(data.frame(x = xx$groupScoreQuantile), aes(x = x)) +
+  geom_density() +
+  xlim(0, 1)
+```
+
+
+
+
+
+
+
+
+
+
+
+

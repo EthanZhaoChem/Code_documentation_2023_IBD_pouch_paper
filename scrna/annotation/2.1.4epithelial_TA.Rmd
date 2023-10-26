@@ -1,0 +1,129 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+knitr::opts_knit$set(root.dir = '/home/yuzhao1/gca/yuzhao1/work/gca_rna/')
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+
+```{r, eval=F}
+epithelial <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/epithelial3.rds')
+cells_TA <- Cells(epithelial)[which(epithelial$anno1 %in% c('TA'))]
+```
+
+```{r}
+seurat_TA <- subset(epithelial, cells = cells_TA)
+```
+
+```{r}
+saveRDS(seurat_TA, '~/yuzhao1/work/final_RC2rna/annotation/rds/epithelial3_TA.rds')
+```
+
+
+```{r}
+saveRDS(epithelial, '~/yuzhao1/work/final_RC2rna/annotation/rds/epithelial3.rds')
+
+```
+
+
+### workflow
+
+
+```{r, include = F, eval=F}
+seurat_TA <- NormalizeData(seurat_TA)
+seurat_TA <- FindVariableFeatures(seurat_TA, selection.method = "vst", nfeatures = 2000)
+seurat_TA <- ScaleData(seurat_TA, vars.to.regress = c('percent.mt', 'nCount_RNA', 'CC.Difference'))
+seurat_TA <- RunPCA(seurat_TA, npcs = 50)
+seurat_TA <- RunHarmony(seurat_TA, group.by.vars = 'Patient_ID', max.iter.harmony = 20)
+
+# seed 5 look OK, 1 also makes sense
+seurat_TA <- RunUMAP(seurat_TA,  dims = 1:50, reduction = 'harmony', reduction.name = 'harmony_umap', 
+                      min.dist = 0.4, n.neighbors = 50, seed.use = 1,
+                      reduction.key = 'UMAP_')
+
+seurat_TA <- FindNeighbors(seurat_TA, reduction = 'harmony', dims = 1:50)
+
+seurat_TA <- FindClusters(seurat_TA, resolution = 0.1)
+seurat_TA$seurat_clusters_res0.1 <- Idents(seurat_TA)
+
+seurat_TA <- FindClusters(seurat_TA, resolution = 0.5)
+seurat_TA$seurat_clusters_res0.5 <- Idents(seurat_TA)
+
+seurat_TA <- FindClusters(seurat_TA, resolution = 1)
+seurat_TA$seurat_clusters_res1 <- Idents(seurat_TA)
+```
+
+
+
+### Check clustering results
+
+```{r}
+seurat_TA <- RunUMAP(seurat_TA,  dims = 1:50, reduction = 'harmony', reduction.name = 'harmony_umap', 
+                      min.dist = 0.4, n.neighbors = 50, seed.use = 1,
+                      reduction.key = 'UMAP_')
+```
+
+
+```{r, fig.height=7, fig.width=6}
+df <- data.frame(seurat_TA@meta.data)
+df$embedding1 <- data.frame(seurat_TA@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(seurat_TA@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$cluster_name <- seurat_TA$seurat_clusters_res0.5
+plot_df_umap_custom(df, show.label = 'name')
+```
+
+```{r, fig.height=7, fig.width=7}
+TA_goblet <- Cells(seurat_TA)[which(seurat_TA$seurat_clusters_res0.5 %in% c('3'))]
+TA_ec <- setdiff(Cells(seurat_TA), TA_goblet)
+
+epithelial@meta.data[TA_goblet, 'anno2'] <- 'TA_Goblet'
+epithelial@meta.data[TA_ec, 'anno2'] <- 'TA_EC'
+
+df <- data.frame(epithelial@meta.data)
+df$embedding1 <- data.frame(epithelial@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(epithelial@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$cluster_name <- epithelial$anno2
+plot_df_umap_custom(df, show.label = 'name')
+```
+
+```{r}
+xx <- FindMarkers(epithelial, group.by = 'anno2', ident.1 = 'TA_Goblet', ident.2 = 'TA_EC')
+```
+
+
+
+```{r, fig.height=6, fig.width=6}
+df <- data.frame(seurat_TA@meta.data)
+df$embedding1 <- data.frame(seurat_TA@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(seurat_TA@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$cluster_name <- seurat_TA$seurat_clusters_res0.5
+plot_df_umap_custom(df, show.label = 'name')
+```
+
+
+```{r, fig.height=13, fig.width=12}
+df <- data.frame(seurat_TA@meta.data)
+df$embedding1 <- data.frame(seurat_TA@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(seurat_TA@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$cluster_name <- seurat_TA$seurat_clusters_res0.5
+plot_df_umap_custom(df, show.label = 'name') +
+  facet_wrap(~ biopsy_location) +
+  theme(
+    strip.background = element_rect(fill = "white", colour = "white"),
+    strip.text = element_text(size = 12)
+  )
+```
+
+

@@ -1,0 +1,96 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(ArchR)
+library(parallel)
+library(BSgenome.Hsapiens.UCSC.hg38)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('~/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+source('~/yuzhao1/work/manu/rc2/scripts/rna_deg_markers.R')
+source('~/yuzhao1/scripts/helper_archr.R')
+```
+
+```{r, include = F, eval=F}
+proj_epithelial <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_epithelial_filtered2/")
+DARs <- readRDS('~/yuzhao1/work/final_RC2atac/peaks/3DARs/DARs_EC.rds')
+```
+
+```{r}
+out.dir <- '~/yuzhao1/work/manu/rc2/plots/5atac_activelyRegulatedGenes/'
+```
+
+### EC
+
+```{r}
+# re-relect significant genes, split different contrast directions
+cutoff_FDR <- 0.01 # cutoff is for peak selection, cutoffs for motifs are specificied in the text
+cutoff_Log2FC <- 1
+DARs_significant <- list()
+temp_lineage <- 'epithelial'
+proj <- paste0('proj_', temp_lineage) %>% as.name(.) %>% eval(.)
+
+
+for (contrast_name in names(DARs)) {
+  df_stat <- archr_helper_markerPeaks_converter(DARs[[contrast_name]])
+  archr_peakset_Loc <- paste0(paste0(as.character(seqnames(proj@peakSet)), ':',
+                                     start(proj@peakSet),'-',end(proj@peakSet)))
+  idx_matched <- match(rownames(df_stat), archr_peakset_Loc)
+  peaks_info <- as.data.frame(proj@peakSet[idx_matched], row.names = NULL)
+  df_stat <- bind_cols(df_stat, peaks_info)
+  
+  df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC > cutoff_Log2FC), ]
+  DARs_significant[[contrast_name]] <- df_stat_significant
+  
+  df_stat_significant <- df_stat[which(df_stat$FDR<cutoff_FDR & df_stat$Log2FC < 0-cutoff_Log2FC), ]
+  DARs_significant[[paste0(contrast_name, '_down')]] <- df_stat_significant
+}
+
+```
+
+```{r}
+activelyRegulatedGenes <- list()
+Ngenes_cutoff <- 7
+for (contrast_name in names(DARs)) {
+  Ngenes.tb <- table(DARs_significant[[contrast_name]]$nearestGene)
+  Ngenes.activeID <- which(Ngenes.tb>Ngenes_cutoff)
+  activelyRegulatedGenes[[contrast_name]] <- names(Ngenes.tb)[Ngenes.activeID]
+  
+  contrast_name <- paste0(contrast_name, '_down')
+  Ngenes.tb <- table(DARs_significant[[contrast_name]]$nearestGene)
+  Ngenes.activeID <- which(Ngenes.tb>Ngenes_cutoff)
+  activelyRegulatedGenes[[contrast_name]] <- names(Ngenes.tb)[Ngenes.activeID]
+}
+```
+
+```{r}
+intersect(activelyRegulatedGenes$EC_ACvsTI, activelyRegulatedGenes$EC_POU2vsPP)
+```
+
+```{r}
+intersect(activelyRegulatedGenes$EC_ACvsTI, activelyRegulatedGenes$EC_POU2vsPOU1)
+```
+
+```{r}
+intersect(activelyRegulatedGenes$EC_ACvsTI_down, activelyRegulatedGenes$EC_POU2vsPP_down)
+```
+
+```{r}
+intersect(activelyRegulatedGenes$EC_ACvsTI_down, activelyRegulatedGenes$EC_POU2vsPOU1_down)
+```
+
+

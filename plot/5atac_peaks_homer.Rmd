@@ -1,0 +1,259 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(ArchR)
+library(parallel)
+library(BSgenome.Hsapiens.UCSC.hg38)
+library(ComplexHeatmap)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+source('~/yuzhao1/scripts/helper_archr.R')
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('~/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+source('~/yuzhao1/work/manu/rc2/scripts/rna_deg_markers.R')
+```
+
+```{r}
+out.dir <- '~/yuzhao1/work/manu/rc2/plots/5atac_peaks_decomposition/distinct _mode/'
+DARs_plot <- readRDS('~/yuzhao1/work/final_RC2atac/peaks/EC_DAR_regions_DifferentContrastLists_ScriptInManuFolder.rds')
+```
+
+### plot
+
+```{r, fig.width=8, fig.height=5}
+pdf(paste0(out.dir, 'EC', '.pdf'), width = 8, height = 5, pointsize = 1)
+set_order <- c(
+  'EC_ACvsTI',
+  'EC_POU2vsPP',
+  'EC_POU2vsPOU1',
+  'EC_TIvsAC',
+  'EC_PPvsPOU2',
+  'EC_POU1vsPOU2',
+  'EC_PPvsPOU1',
+  'EC_POU1vsPP'
+)
+m1 = make_comb_mat(DARs_plot[set_order], mode = "distinct")
+
+m2 <- m1[comb_degree(m1)%in%c(2,3) & comb_size(m1) >= 1000]
+
+ss <- set_size(m2)
+cs <- comb_size(m2)
+ht <- UpSet(m2,       
+      set_order = set_order,
+      top_annotation = HeatmapAnnotation(
+        "# Open regions" = anno_barplot(cs, 
+                                        axis = T,
+                                        axis_param = list(gp=gpar(fontsize=10)),
+                                        ylim = c(0, max(cs)*1.1),
+                                        border = FALSE, 
+                                        gp = gpar(fill = "black"), 
+                                        height = unit(4, "cm")), 
+        annotation_name_side = "left", 
+        annotation_name_rot = 90,
+        annotation_name_gp= gpar(fontsize = 12)
+        ),
+      
+      right_annotation =  rowAnnotation(
+        "DARs per contrast" = anno_barplot(ss, 
+                                          baseline = 0,
+                                          axis = T,
+                                          axis_param = list(
+                                            gp=gpar(fontsize=10),
+                                            at = c(0, 10000, 20000, 30000, 40000, 50000, 60000),
+                                            labels = c(0, 10000, 20000, 30000, 40000, 50000, 60000),
+                                            labels_rot = 45),
+                                          border = FALSE, 
+                                          extend = 0.5,
+                                          gp = gpar(fill = "black"), 
+                                          width = unit(6, "cm")),
+        annotation_name_gp= gpar(fontsize = 12)
+
+    )
+)
+
+ht = draw(ht)
+od = column_order(ht)
+rod = row_order(ht)
+decorate_annotation(
+  "# Open regions", {
+    grid.text(cs[od], x = seq_along(cs), y = unit(cs[od], "native") + unit(2, "pt"),
+              default.units = "native", just = c("center", "bottom"),
+              gp = gpar(fontsize = 10, col = "black", lwd=3), rot = 0)})
+
+decorate_annotation(
+  "DARs per contrast", {
+    grid.text(ss[rod], y = seq_along(ss) %>% rev(), x = unit(ss[rod], "native") + unit(1, "cm"),
+              default.units = "native", just = c("right", "center"),
+              gp = gpar(fontsize = 10, col = "black", lwd=3), rot = 0)})
+
+dev.off()
+```
+
+```{r, fig.width=8, fig.height=5}
+pdf(paste0(out.dir, 'EC2', '.pdf'), width = 8, height = 5, pointsize = 1)
+set_order <- c('EC_TIvsAC', "EC_POU1vsAC", "EC_POU2vsAC",
+               'EC_ACvsTI', "EC_ACvsPOU1", "EC_ACvsPOU2")
+
+m1 = make_comb_mat(DARs_plot[set_order], mode = "intersect")
+m2 <- m1[comb_degree(m1)%in%c(2,3) & comb_size(m1) >= 1000]
+
+ss <- set_size(m2)
+cs <- comb_size(m2)
+ht <- UpSet(m2,       
+      set_order = set_order,
+      top_annotation = HeatmapAnnotation(
+        "# Open regions" = anno_barplot(cs, 
+                                        axis = T,
+                                        axis_param = list(gp=gpar(fontsize=10)),
+                                        ylim = c(0, max(cs)*1.1),
+                                        border = FALSE, 
+                                        gp = gpar(fill = "black"), 
+                                        height = unit(4, "cm")), 
+        annotation_name_side = "left", 
+        annotation_name_rot = 90,
+        annotation_name_gp= gpar(fontsize = 12)
+        ),
+      
+      right_annotation =  rowAnnotation(
+        "DARs per contrast" = anno_barplot(ss, 
+                                          baseline = 0,
+                                          axis = T,
+                                          axis_param = list(
+                                            gp=gpar(fontsize=10),
+                                            at = c(0, 10000, 20000, 30000, 40000, 50000, 60000),
+                                            labels = c(0, 10000, 20000, 30000, 40000, 50000, 60000),
+                                            labels_rot = 45),
+                                          border = FALSE, 
+                                          extend = 0.5,
+                                          gp = gpar(fill = "black"), 
+                                          width = unit(6, "cm")),
+        annotation_name_gp= gpar(fontsize = 12)
+
+    )
+)
+
+ht = draw(ht)
+od = column_order(ht)
+rod = row_order(ht)
+decorate_annotation(
+  "# Open regions", {
+    grid.text(cs[od], x = seq_along(cs), y = unit(cs[od], "native") + unit(2, "pt"),
+              default.units = "native", just = c("center", "bottom"),
+              gp = gpar(fontsize = 10, col = "black", lwd=3), rot = 0)})
+
+decorate_annotation(
+  "DARs per contrast", {
+    grid.text(ss[rod], y = seq_along(ss) %>% rev(), x = unit(ss[rod], "native") + unit(1, "cm"),
+              default.units = "native", just = c("right", "center"),
+              gp = gpar(fontsize = 10, col = "black", lwd=3), rot = 0)})
+
+dev.off()
+```
+
+
+```{r, fig.width=8, fig.height=5}
+pdf(paste0(out.dir, 'EC', '.pdf'), width = 8, height = 5, pointsize = 1)
+set_order <- c(
+  'EC_ACvsTI',
+  'EC_POU2vsPP',
+  'EC_POU2vsPOU1',
+  'EC_TIvsAC',
+  'EC_PPvsPOU2',
+  'EC_POU1vsPOU2',
+  'EC_PPvsPOU1',
+  'EC_POU1vsPP'
+)
+m1 = make_comb_mat(DARs_plot[set_order], mode = "distinct")
+
+m2 <- m1[comb_degree(m1)%in%c(2,3) & comb_size(m1) >= 1000]
+
+ss <- set_size(m2)
+cs <- comb_size(m2)
+ht <- UpSet(m2,       
+      set_order = set_order,
+      top_annotation = HeatmapAnnotation(
+        "# Open regions" = anno_barplot(cs, 
+                                        axis = T,
+                                        axis_param = list(gp=gpar(fontsize=10)),
+                                        ylim = c(0, max(cs)*1.1),
+                                        border = FALSE, 
+                                        gp = gpar(fill = "black"), 
+                                        height = unit(4, "cm")), 
+        annotation_name_side = "left", 
+        annotation_name_rot = 90,
+        annotation_name_gp= gpar(fontsize = 12)
+        ),
+      
+      right_annotation =  rowAnnotation(
+        "DARs per contrast" = anno_barplot(ss, 
+                                          baseline = 0,
+                                          axis = T,
+                                          axis_param = list(
+                                            gp=gpar(fontsize=10),
+                                            at = c(0, 10000, 20000, 30000, 40000, 50000, 60000),
+                                            labels = c(0, 10000, 20000, 30000, 40000, 50000, 60000),
+                                            labels_rot = 45),
+                                          border = FALSE, 
+                                          extend = 0.5,
+                                          gp = gpar(fill = "black"), 
+                                          width = unit(6, "cm")),
+        annotation_name_gp= gpar(fontsize = 12)
+
+    )
+)
+
+ht = draw(ht)
+od = column_order(ht)
+rod = row_order(ht)
+decorate_annotation(
+  "# Open regions", {
+    grid.text(cs[od], x = seq_along(cs), y = unit(cs[od], "native") + unit(2, "pt"),
+              default.units = "native", just = c("center", "bottom"),
+              gp = gpar(fontsize = 10, col = "black", lwd=3), rot = 0)})
+
+decorate_annotation(
+  "DARs per contrast", {
+    grid.text(ss[rod], y = seq_along(ss) %>% rev(), x = unit(ss[rod], "native") + unit(1, "cm"),
+              default.units = "native", just = c("right", "center"),
+              gp = gpar(fontsize = 10, col = "black", lwd=3), rot = 0)})
+
+dev.off()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

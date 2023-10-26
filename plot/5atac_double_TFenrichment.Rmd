@@ -1,0 +1,88 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(ArchR)
+library(parallel)
+library(BSgenome.Hsapiens.UCSC.hg38)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('~/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+source('~/yuzhao1/work/manu/rc2/scripts/rna_deg_markers.R')
+```
+
+```{r}
+out.dir <- '~/yuzhao1/work/manu/rc2/plots/5atac_double_TFenrichment/'
+```
+
+### EC
+
+```{r}
+motif_stats <- readRDS("/project/gca/yuzhao1/work/final_RC2atac/peaks/customized_enrichment/EC_allPossible_enrichments.rds")
+```
+
+```{r}
+# name it
+x_name <- 'colon_core'
+y_name <- 'ileum_core'
+title <- paste0('x:', x_name, '  y:', y_name)
+
+df1 <- motif_stats[[x_name]]
+df2 <- motif_stats[[y_name]]
+
+tfs <- rownames(df1)
+df2 <- df2[tfs, ]
+tfs_show <- tfs %>% strsplit(split = '_', fixed=T) %>% sapply(.,`[[`,1)
+
+# choose which to highlight
+xx1 <- df1$feature[order(df1$mlog10Padj, decreasing = T)[1:20]]
+xx2 <- df2$feature[order(df2$mlog10Padj, decreasing = T)[1:20]]
+tfs.isSignificant <- df1$feature %in% c(xx1, xx2) 
+
+
+df <- data.frame(tfs = tfs,
+                 tfs_x = df1$mlog10Padj,
+                 tfs_y = df2$mlog10Padj)
+
+df$tfs_show <- ifelse(tfs.isSignificant, 
+                      tfs_show, 
+                      '')
+
+# plot
+p <-ggscatter(df,x = 'tfs_x',y = 'tfs_y',size = 0.1, font.label = c(1, "plain",'black')) +
+  theme_pubr() +
+  theme(axis.title = element_text(size = 16, face = 'bold'),
+        axis.text = element_text(size = 10),
+        plot.title = element_text(hjust = 0.5),
+        legend.position = "none")+
+  labs(title=title,
+       x = x_name, 
+       y = y_name)+
+  geom_label_repel(aes(label=tfs_show),
+    nudge_y = 0.01,
+    max.overlaps = 1000
+  ) 
+
+pdf(paste0(out.dir, title , '.pdf'), width = 20, height = 20, pointsize = 1)
+print(p)
+dev.off()
+
+```
+
+
+
+
+

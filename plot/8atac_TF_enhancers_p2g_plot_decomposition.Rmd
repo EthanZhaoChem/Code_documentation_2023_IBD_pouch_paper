@@ -1,0 +1,257 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(ArchR)
+library(parallel)
+library(BSgenome.Hsapiens.UCSC.hg38)
+library(VennDiagram)
+library(factoextra)
+library(cluster)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('~/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+source('~/yuzhao1/work/manu/rc2/scripts/rna_deg_markers.R')
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/tfs.R')
+source('~/yuzhao1/work/manu/rc2/scripts/helper_p2gHeatmap.R')
+```
+
+```{r}
+out.dir <- '/project/gca/yuzhao1/work/manu/rc2/plots/8atac_TF_enhancers_p2g_plot_decomposition/'
+```
+
+```{r}
+theme.composition<-    
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_rect(colour = "black", fill=NA, size=1),
+    panel.background = element_blank(),
+    panel.grid = element_blank(),
+    axis.text.y = element_text(size = 15, face = 'bold', colour = 'black'),
+    axis.text.x = element_text(size = 15, face = 'bold', colour = 'black'),
+    # axis.ticks = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(size = 15, face = 'bold', colour = 'black'),
+    
+    legend.key = element_blank(),
+    legend.title = element_blank(),
+    legend.position = "bottom",
+    legend.text = element_text(size = 6),
+    plot.margin = margin(0.5, 0.5, 0.5, 0.5, "cm"),
+    plot.title = element_text(size = 6, colour = 'black'))
+
+```
+
+
+```{r, include = F, eval=F}
+proj <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_epithelial_filtered2_EC/")
+```
+
+```{r}
+DARs_plot <- readRDS('~/yuzhao1/work/final_RC2atac/peaks/EC_DAR_regions_DifferentContrastLists_ScriptInManuFolder.rds')
+enhancers_df <- readRDS('~/yuzhao1/work/manu/rc2/plots/8atac_DEGvsEnhancervsTF_preparation/links_peak_gene_corr.rds')
+enhancers_TF_annotation <- readRDS('~/yuzhao1/work/manu/rc2/plots/8atac_DEGvsEnhancervsTF_preparation/enhancers_TF_annotation.rds')
+length(unique(enhancers_df$gene))
+
+peaks.all <- paste(proj@peakSet@seqnames,
+                 start(proj@peakSet@ranges),
+                 end(proj@peakSet@ranges),
+                 sep="_")
+
+peakDic <- data.frame(peak = peaks.all, type = proj@peakSet$peakType)
+rownames(peakDic) <- peakDic$peak
+```
+
+```{r}
+# rna part
+markers <- readRDS('~/yuzhao1/work/final_RC2rna/deg/epithelial/ec/markers_filtered_logFC1_adjp0.001.rds')
+markers.vectors <- list()
+
+temp <- markers[["TIvsAC"]]
+markers.vectors[['TIvsAC']] <- rownames(temp)[temp[['logFC']] > 1]
+markers.vectors[['ACvsTI']] <- rownames(temp)[temp[['logFC']] < -1]
+
+temp <- markers[["PPvsPOU_EC2"]]
+markers.vectors[['PPvsPOU_EC2']] <- rownames(temp)[temp[['logFC']] > 1]
+markers.vectors[['POU_EC2vsPP']] <- rownames(temp)[temp[['logFC']] < -1]
+
+temp <- markers[["POU_EC2vsPOU_EC1"]]
+markers.vectors[['POU_EC2vsPOU_EC1']] <- rownames(temp)[temp[['logFC']] > 1]
+markers.vectors[['POU_EC1vsPOU_EC2']] <- rownames(temp)[temp[['logFC']] < -1]
+
+temp <- markers[["POU_EC2vsAC"]]
+markers.vectors[["POU_EC2vsAC"]] <- rownames(temp)[temp[['avg_log2FC']] > 1]
+markers.vectors[["ACvsPOU_EC2"]] <- rownames(temp)[temp[['avg_log2FC']] < -1]
+
+temp <- markers[["PPvsPOU_EC1"]]
+markers.vectors[["PPvsPOU_EC1"]] <- rownames(temp)[temp[['logFC']] > 1]
+markers.vectors[["POU_EC1vsPP"]] <- rownames(temp)[temp[['logFC']] < -1]
+```
+
+```{r}
+dars.all <- unique(unlist(DARs_plot)) %>% gsub(':','_',.) %>% gsub('-','_',.)
+degs.all <- unique(unlist(markers.vectors))
+```
+
+```{r}
+genes <- unique(enhancers_df$gene)
+genes_repeats <- c()
+for(gene in genes){
+  n_repeat <- sum(enhancers_df$gene == gene)
+  genes_repeats <- c(genes_repeats, n_repeat)
+}
+names(genes_repeats) <- genes
+```
+
+```{r}
+gene_repeats_deg <- genes_repeats[names(genes_repeats)%in%degs.all]
+gene_repeats_NOdeg <- genes_repeats[!names(genes_repeats)%in%degs.all]
+
+df1 <- table(gene_repeats_deg) %>%  as.data.frame()
+df2 <- table(gene_repeats_NOdeg) %>%  as.data.frame()
+colnames(df1) <- c('n_Region_repeats', 'Freq')
+df1$gene_type <- 'DEG'
+colnames(df2) <- c('n_Region_repeats', 'Freq')
+df2$gene_type <- 'non DEG'
+df <- rbind(df1, df2)
+
+
+p <- ggplot(df, aes(x = n_Region_repeats, y = Freq, fill = gene_type)) +
+  geom_col( alpha = 0.9, width = 0.5) +
+  scale_fill_manual(values = c('DEG'= '#bebada','non DEG'= '#fdb462'))+
+  # geom_text(aes(label=Freq), hjust=0.5, vjust = -0.2, color="black",size=1.5, fontface = 'bold')+
+  theme_classic() +
+  theme(
+    panel.grid.major = element_line(linetype="dashed"),
+    panel.grid.minor = element_line(linetype="dashed"),
+    # axis.text.x = element_text(size = 10, face = 'bold', colour = 'black', angle = 90, hjust = 1, vjust = 0.5),
+    axis.text.x = element_text(angle=45, hjust = 1, vjust = 1, size = 7, face = 'bold', colour = 'black',),
+    axis.text.y = element_text(size = 12, face = 'bold', colour = 'black'),
+    axis.ticks = element_blank(),
+    axis.title = element_text(size = 12, face = 'bold', colour = 'black'),
+    plot.title = element_text(size = 12, face = 'bold', colour = 'black', hjust = 0.5),
+    plot.margin = margin(2,2,2,2,'cm') 
+  )+
+  labs(title = '', x = "nLinkedRegions", y = "nGenes")
+p
+
+pdf(paste0(out.dir, 'distribution_of_nLinkedRegions_perGene.pdf'), width = 10, height = 6, pointsize = 1)
+print(p)
+dev.off()
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+enhancers_df$isDar <- enhancers_df$peak %in% dars.all
+enhancers_df$isDeg <- enhancers_df$gene %in% degs.all
+
+x1 <- sum(enhancers_df$isDar == 1 & enhancers_df$isDeg == 0)
+x2 <- sum(enhancers_df$isDar == 1 & enhancers_df$isDeg == 1)
+x3 <- sum(enhancers_df$isDar == 0 & enhancers_df$isDeg == 1)
+x4 <- sum(enhancers_df$isDar == 0 & enhancers_df$isDeg == 0)
+
+df <- data.frame(nLinks = c(x1, x2, x3, x4), linkType = c('dar_only',
+                                                          'dar+deg',
+                                                          'deg_only',
+                                                          'nonDar_nonDeg'))
+title <- "out of 31808 linked regions\n18500 are linked between deg and dar\n7767: dar to nonDEG gene\n3338: non-dar region to deg\n 2203: non dar region to non deg gene"
+p2 <-ggplot(df, aes(x = "", y = nLinks, fill = linkType)) +
+  geom_bar(position = "stack", stat = "identity")+
+  labs(title = title, y = "nLinks", x = "", fill = "")+
+  theme.composition
+
+pdf(paste0(out.dir, 'link_type.pdf'), width = 5, height = 6, pointsize = 1)
+print(p2)
+dev.off()
+```
+
+
+```{r}
+enhancers_df$isDar <- enhancers_df$peak %in% dars.all
+enhancers_df$isDeg <- enhancers_df$gene %in% degs.all
+
+linkID.onlyDar <- which(enhancers_df$isDar == 1 & enhancers_df$isDeg == 0)
+linkID.DarDeg <- which(enhancers_df$isDar == 1 & enhancers_df$isDeg == 1)
+linkID.onlyDeg <- which(enhancers_df$isDar == 0 & enhancers_df$isDeg == 1)
+
+a1 <- unique(enhancers_df[linkID.onlyDar, 'peak'])
+a2 <- unique(enhancers_df[linkID.onlyDeg, 'gene'])
+a3 <- unique(enhancers_df[linkID.DarDeg, 'peak'])
+a4 <- unique(enhancers_df[linkID.DarDeg, 'gene'])
+
+
+df.a1 <- as.data.frame(table(peakDic[a1, 'type']))
+df.a1$Freq <- df.a1$Freq/sum(df.a1$Freq)
+
+df.a3 <- as.data.frame(table(peakDic[a3, 'type']))
+df.a3$Freq <- df.a3$Freq/sum(df.a3$Freq)
+
+df <- full_join(df.a1, df.a3, by='Var1')
+colnames(df) <- c('peak_type', 'DAR_noDEG', 'DAR+DEG')
+df_long <- tidyr::gather(df, key = "DAR_class", value = "value", -peak_type)
+
+
+p2 <-ggplot(df_long, aes(x = DAR_class, y = value, fill = peak_type)) +
+  geom_bar(position = "stack", stat = "identity")+
+  # scale_fill_manual(values = custom_colors_rna_lineage)+
+  labs(title = "out of 120569 DARs\n13832 are linked to DEGs\n6484 are linked to nonDEG-genes", y = "Proportion (%)", x = "", fill = "")+
+  theme.composition
+
+pdf(paste0(out.dir, 'DAR_type.pdf'), width = 4, height = 6, pointsize = 1)
+print(p2)
+dev.off()
+```
+
+```{r}
+word1 <- paste0('Out of ', as.character(length(a1)+length(a3)), ' DARs linked to genes, ', 
+                  as.character(length(a3)), ' DARs are linked to DEGs\n')
+word2 <- paste0('Out of ', length(a2)+length(a4), ' DEGs linked to peaks, ',
+                length(a4), ' DEGs are linked to DARs')
+title <- paste0(word1, word2)
+df <- data.frame('dar' = c(length(a1), length(a3)), 
+                 'deg' = c(length(a2), length(a4)), 
+                 'type' = c('nonLinked', 'Linked'))
+df$dar <- df$dar/sum(df$dar)
+df$deg <- df$deg/sum(df$deg)
+
+df_long <- tidyr::gather(df, key = "class", value = "value", -type)
+p2 <-ggplot(df_long, aes(x = class, y = value, fill = type)) +
+  geom_bar(position = "stack", stat = "identity")+
+  labs(title = title, y = "Proportion (%)", x = "", fill = "")+
+  theme.composition
+
+pdf(paste0(out.dir, 'linked_proportion.pdf'), width = 4, height = 6, pointsize = 1)
+print(p2)
+dev.off()
+```

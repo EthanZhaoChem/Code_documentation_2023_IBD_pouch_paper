@@ -1,0 +1,326 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(limma)
+library(edgeR)
+library(variancePartition)
+library(BiocParallel)
+library(tidyverse)
+source('~/yuzhao1/scripts/plot.R')
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+source('/project/gca/yuzhao1/scripts/seurat/deg_pseudobulk.R')
+```
+
+
+```{r, include = F, eval=F}
+union <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/gut_filtered.rds')
+```
+
+```{r}
+out.dir <- '~/yuzhao1/work/final_RC2rna/deg/epithelial/ec/'
+```
+
+
+### 1. Enterocytes summaries
+
+```{r}
+seurat <- subset(union, cells = Cells(union)[union$anno1 %in% c('EC1-1', 'EC1-2', "EC2-1", "EC2-2")])
+seurat$anno1[seurat$anno1 %in% c("EC1-1", "EC1-2") & seurat$biopsy_location =='POU'] <- 'EC-POU1'
+seurat$anno1[seurat$anno1 %in% c("EC2-1", "EC2-2") & seurat$biopsy_location =='POU'] <- 'EC-POU2'
+seurat$anno1[seurat$anno1 %in% c("EC1-1", "EC1-2") & seurat$biopsy_location =='PP'] <- 'EC-PP1'
+seurat$anno1[seurat$anno1 %in% c("EC2-1", "EC2-2") & seurat$biopsy_location =='PP'] <- 'EC-PP2'
+seurat$anno1[seurat$anno1 %in% c("EC1-1", "EC1-2", "EC2-1", "EC2-2") & seurat$biopsy_location =='TI'] <- 'EC-TI'
+seurat$anno1[seurat$anno1 %in% c("EC1-1", "EC1-2", "EC2-1", "EC2-2") & seurat$biopsy_location =='AC'] <- 'EC-AC'
+unique(seurat$anno1)
+seurat$anno1 <- factor(seurat$anno1, levels = c('EC-AC', 'EC-POU2', 'EC-POU1', 'EC-PP2',  'EC-PP1', 'EC-TI'))
+
+expression.mean <- rowMeans(seurat@assays$RNA@data)
+genes.above0.01 <- names(expression.mean)[expression.mean > 0.01]
+genes.above0.05 <- names(expression.mean)[expression.mean > 0.05]
+```
+
+```{r}
+genes.ec <- list() # Gene namesummary (for all groups)
+
+# after running 1.1~1.6, we got a all DEGs
+# all these genes have already been filtered by looking at each gene's expression vln/heatmap, and are saved in manu/rc2/scripts/
+genes.ec <- intersect(genes.ec %>% unlist() %>% unique(),  genes.above0.01)
+
+# tfs have also been filtered and saved in manu/rc2/scripts/
+human_tfs <- read.table('~/yuzhao1/resource/scenic/utoronto_human_tfs_v_1.01.txt', header = F)[[1]]
+tfs.ec <- intersect(genes.ec, genes.above0.01) %>% intersect(., human_tfs)
+
+saveRDS(genes.ec, '~/yuzhao1/work/manu/rc2/plots/2rna_deg/EC_heatmap/genesEC.rds')
+saveRDS(tfs.ec, '~/yuzhao1/work/manu/rc2/plots/2rna_deg/EC_heatmap/tfsEC.rds')
+```
+
+```{r}
+markers_filtered <- list()
+pathways <- list()
+
+# run 1.1~1.6 to save filtered raw results to xlsx
+library(openxlsx)  
+# write.xlsx(markers_filtered, file = paste0(out.dir, 'DEGs-', 'EC.xlsx'), sheetName = names(markers_filtered), append=TRUE, row.names=FALSE)
+openxlsx::write.xlsx(markers_filtered, file = paste0(out.dir, 'DEGs-', 'EC.xlsx'), overwrite = T)
+openxlsx::write.xlsx(pathways, file = paste0(out.dir, 'DEPs-', 'EC.xlsx'), overwrite = T)
+```
+
+```{r}
+saveRDS(markers_filtered, '~/yuzhao1/work/final_RC2rna/deg/epithelial/ec/markers_filtered_logFC1_adjp0.001.rds')
+saveRDS(pathways, '~/yuzhao1/work/final_RC2rna/deg/epithelial/ec/pathways.rds')
+```
+
+
+### 1.1 EC ACvsTI
+
+```{r}
+de_results  <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/pseudobulk/de_results_EC_TIvsAC.rds')
+resDf <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/pseudobulk/resDf_EC_TIvsAC.rds')
+
+fclist <- topTable(
+  de_results[["EC"]],
+  coef = "biopsy_locationTI",
+  p.value = 0.05,
+  sort.by = 'logFC',
+  number = 30000
+)
+fclist$gene <- rownames(fclist)
+
+genes.TIvsAC <- rownames(fclist)[fclist$logFC > 1]
+genes.ACvsTI <- rownames(fclist)[fclist$logFC < -1]
+
+genes.ec[['TIvsAC']] <- genes.TIvsAC %>% intersect(., genes.above0.01) 
+genes.ec[['ACvsTI']] <- genes.ACvsTI %>% intersect(., genes.above0.01)
+
+markers_filtered[['TIvsAC']] <- fclist[c(genes.ec[['TIvsAC']], genes.ec[['ACvsTI']]), ]
+pathways[['TIvsAC']] <- resDf 
+```
+
+
+
+### 1.2 PP_EC1vsPOU_EC1
+
+```{r}
+de_results  <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/pseudobulk/de_results_PP_EC1vsPOU_EC1.rds')
+resDf <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/pseudobulk/resDf_PP_EC1vsPOU_EC1.rds')
+
+fclist <- topTable(
+  de_results[["EC"]],
+  coef = "anno1.subPP_EC1",
+  p.value = 0.05,
+  sort.by = 'logFC',
+  number = 100000
+)
+fclist$gene <- rownames(fclist)
+
+genes.PP_EC1vsPOU_EC1 <- rownames(fclist)[fclist$logFC > 1]
+genes.POU_EC1vsPP_EC1 <- rownames(fclist)[fclist$logFC < -1]
+
+genes.ec[['PP_EC1vsPOU_EC1']] <- genes.PP_EC1vsPOU_EC1
+genes.ec[['POU_EC1vsPP_EC1']] <- genes.POU_EC1vsPP_EC1
+
+markers_filtered[['PP_EC1vsPOU_EC1']] <- fclist[c(genes.ec[['PP_EC1vsPOU_EC1']], genes.ec[['POU_EC1vsPP_EC1']]), ]
+pathways[['PP_EC1vsPOU_EC1']] <- resDf 
+```
+
+### 1.2.2 PP_ECvsPOU_EC1
+
+```{r}
+de_results  <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/pseudobulk/de_results_PP_ECvsPOU_EC1.rds')
+resDf <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/pseudobulk/resDf_PP_ECvsPOU_EC1.rds')
+
+fclist <- topTable(
+  de_results[["EC"]],
+  coef = "anno1.subPP_EC-PP",
+  p.value = 0.05,
+  sort.by = 'logFC',
+  number = 100000
+)
+fclist$gene <- rownames(fclist)
+
+genes.PP_ECvsPOU_EC1 <- rownames(fclist)[fclist$logFC > 1]
+genes.POU_EC1vsPP_EC <- rownames(fclist)[fclist$logFC < -1]
+
+genes.ec[['PP_ECvsPOU_EC1']] <- genes.PP_ECvsPOU_EC1
+genes.ec[['POU_EC1vsPP_EC']] <- genes.POU_EC1vsPP_EC
+
+markers_filtered[['PPvsPOU_EC1']] <- fclist[c(genes.ec[['PP_ECvsPOU_EC1']], genes.ec[['POU_EC1vsPP_EC']]), ]
+pathways[['PPvsPOU_EC1']] <- resDf 
+```
+
+
+
+### 1.2.3 PP_ECvsPOU_EC2
+
+```{r}
+de_results  <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/pseudobulk/de_results_PP_ECvsPOU_EC2.rds')
+resDf <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/pseudobulk/resDf_PP_ECvsPOU_EC2.rds')
+
+fclist <- topTable(
+  de_results[["EC"]],
+  coef = "anno1.subPP_EC-PP",
+  p.value = 0.05,
+  sort.by = 'logFC',
+  number = 100000
+)
+fclist$gene <- rownames(fclist)
+
+genes.PP_ECvsPOU_EC2 <- rownames(fclist)[fclist$logFC > 1]
+genes.POU_EC2vsPP_EC <- rownames(fclist)[fclist$logFC < -1]
+
+genes.ec[['PP_ECvsPOU_EC2']] <- genes.PP_ECvsPOU_EC2
+genes.ec[['POU_EC2vsPP_EC']] <- genes.POU_EC2vsPP_EC
+
+markers_filtered[['PPvsPOU_EC2']] <- fclist[c(genes.ec[['PP_ECvsPOU_EC2']], genes.ec[['POU_EC2vsPP_EC']]), ]
+pathways[['PPvsPOU_EC2']] <- resDf 
+```
+
+
+### 1.3 POU_EC1vsPOU_EC2
+```{r}
+de_results  <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/pseudobulk/de_results_POU_EC2vsPOU_EC1.rds')
+resDf <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/pseudobulk/resDf_EC_POU_EC2vsPOU_EC1.rds')
+
+fclist <- topTable(
+  de_results[["EC"]],
+  coef = "anno1.subPOU_EC2",
+  p.value = 0.05,
+  sort.by = 'logFC',
+  number = 100000
+)
+fclist$gene <- rownames(fclist)
+
+genes.POU_EC2vsPOU_EC1 <- rownames(fclist)[fclist$logFC > 1]
+genes.POU_EC1vsPOU_EC2 <- rownames(fclist)[fclist$logFC < -1]
+
+genes.ec[['POU_EC2vsPOU_EC1']] <- genes.POU_EC2vsPOU_EC1
+genes.ec[['POU_EC1vsPOU_EC2']] <- genes.POU_EC1vsPOU_EC2
+
+markers_filtered[['POU_EC2vsPOU_EC1']] <- fclist[c(genes.ec[['POU_EC2vsPOU_EC1']], genes.ec[['POU_EC1vsPOU_EC2']]), ]
+pathways[['POU_EC2vsPOU_EC1']] <- resDf 
+```
+
+### 1.4.1 POU_EC2vsAC
+
+```{r}
+de_results  <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/pseudobulk/de_results_pou2vsAC_bulk.rds')
+resDf <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/pseudobulk/resDf_pou2vsAC_bulk.rds')
+
+
+fclist <- topTable(
+  de_results[["EC"]],
+  coef = "anno1.subPOU_EC-POU2",
+  p.value = 0.05,
+  sort.by = 'logFC',
+  number = 100000
+)
+fclist$gene <- rownames(fclist)
+
+genes.ec[['POU_EC2vsAC']] <- rownames(fclist)[fclist$logFC > 1]
+genes.ec[['ACvsPOU_EC2']] <- rownames(fclist)[fclist$logFC < -1]
+
+markers_filtered[['POU_EC2vsAC']] <- fclist[c(genes.ec[['POU_EC2vsAC']],
+                                              genes.ec[['ACvsPOU_EC2']]), ]
+pathways[['POU_EC2vsAC']] <- resDf 
+```
+
+### 1.4.2 POU_EC1 vs AC
+```{r}
+de_results  <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/wilcoxon/POU_EC1vsAC.rds')
+resDf <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/wilcoxon/resDf_POU_EC1vsAC.rds')
+
+fclist <- de_results[de_results$p_val_adj < 0.05,]
+fclist$gene <- rownames(fclist)
+
+genes.ec[['POU_EC1vsAC']] <- rownames(fclist)[fclist$avg_log2FC > 1]
+genes.ec[['ACvsPOU_EC1']] <- rownames(fclist)[fclist$avg_log2FC < -1]
+
+markers_filtered[['POU_EC1vsAC']] <- fclist[c(genes.ec[['POU_EC1vsAC']], genes.ec[['ACvsPOU_EC1']]), ]
+pathways[['POU_EC1vsAC']] <- resDf
+```
+
+### 1.5 EC_PP1vsTI
+```{r}
+de_results  <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/wilcoxon/EC_PP1vsTI.rds')
+resDf <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/wilcoxon/resDf_EC_PP1vsTI.rds')
+
+fclist <- de_results[de_results$p_val_adj < 0.05,]
+fclist$gene <- rownames(fclist)
+
+genes.ec[['EC_PP1vsTI']] <- rownames(fclist)[fclist$avg_log2FC > 1]
+genes.ec[['EC_TIvsPP1']] <- rownames(fclist)[fclist$avg_log2FC < -1]
+
+markers_filtered[['PP1vsTI']] <- fclist[c(genes.ec[['EC_PP1vsTI']], genes.ec[['EC_TIvsPP1']]), ]
+pathways[['PP1vsTI']] <- resDf
+```
+
+### 1.5.2 EC_PPvsTI
+```{r}
+de_results  <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/wilcoxon/EC_PPvsTI.rds')
+resDf <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/wilcoxon/resDf_EC_PPvsTI.rds')
+
+fclist <- de_results[de_results$p_val_adj < 0.05,]
+fclist$gene <- rownames(fclist)
+
+genes.ec[['EC_PPvsTI']] <- rownames(fclist)[fclist$avg_log2FC > 1]
+genes.ec[['EC_TIvsPP']] <- rownames(fclist)[fclist$avg_log2FC < -1]
+
+markers_filtered[['PPvsTI']] <- fclist[c(genes.ec[['EC_PPvsTI']], genes.ec[['EC_TIvsPP']]), ]
+pathways[['PPvsTI']] <- resDf
+```
+
+### 1.6 union_EC1vsEC2
+```{r}
+de_results  <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/wilcoxon/union_EC1vsEC2.rds')
+resDf <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/ec/wilcoxon/resDf_union_EC1vsEC2.rds')
+
+fclist <- de_results[de_results$p_val_adj < 0.05,]
+fclist$gene <- rownames(fclist)
+
+genes.ec[['union_EC1vsEC2']] <- rownames(fclist)[fclist$avg_log2FC > 1]
+genes.ec[['union_EC2vsEC1']] <- rownames(fclist)[fclist$avg_log2FC < -1]
+
+markers_filtered[['union_EC1vsEC2']] <- fclist[c(genes.ec[['union_EC1vsEC2']], genes.ec[['union_EC2vsEC1']]), ]
+pathways[['union_EC1vsEC2']] <- resDf
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

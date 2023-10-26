@@ -1,0 +1,414 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(ArchR)
+library(parallel)
+library(BSgenome.Hsapiens.UCSC.hg38)
+library(VennDiagram)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('~/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+source('~/yuzhao1/work/manu/rc2/scripts/rna_deg_markers.R')
+```
+
+```{r}
+dir.out <- '~/yuzhao1/work/manu/rc2/plots/8atac_DEGvsEnhancervsTF_network/'
+```
+
+
+```{r, include = F, eval=F}
+proj <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_epithelial_filtered2_EC/")
+DARs_plot <- readRDS('~/yuzhao1/work/final_RC2atac/peaks/EC_DAR_regions_DifferentContrastLists_ScriptInManuFolder.rds')
+enhancers_df <- readRDS('~/yuzhao1/work/manu/rc2/plots/8atac_DEGvsEnhancervsTF_preparation/links_peak_gene_corr.rds')
+enhancers_TF_annotation <- readRDS('~/yuzhao1/work/manu/rc2/plots/8atac_DEGvsEnhancervsTF_preparation/enhancers_TF_annotation.rds')
+length(unique(enhancers_df$gene))
+```
+
+```{r}
+# rna part
+markers <- readRDS('~/yuzhao1/work/final_RC2rna/deg/epithelial/ec/markers_filtered_logFC1_adjp0.001.rds')
+markers.vectors <- list()
+
+temp <- markers[["TIvsAC"]]
+markers.vectors[['TIvsAC']] <- rownames(temp)[temp[['logFC']] > 1]
+markers.vectors[['ACvsTI']] <- rownames(temp)[temp[['logFC']] < -1]
+
+temp <- markers[["PPvsPOU_EC2"]]
+markers.vectors[['PPvsPOU_EC2']] <- rownames(temp)[temp[['logFC']] > 1]
+markers.vectors[['POU_EC2vsPP']] <- rownames(temp)[temp[['logFC']] < -1]
+
+temp <- markers[["POU_EC2vsPOU_EC1"]]
+markers.vectors[['POU_EC2vsPOU_EC1']] <- rownames(temp)[temp[['logFC']] > 1]
+markers.vectors[['POU_EC1vsPOU_EC2']] <- rownames(temp)[temp[['logFC']] < -1]
+
+temp <- markers[["POU_EC2vsAC"]]
+markers.vectors[["POU_EC2vsAC"]] <- rownames(temp)[temp[['avg_log2FC']] > 1]
+markers.vectors[["ACvsPOU_EC2"]] <- rownames(temp)[temp[['avg_log2FC']] < -1]
+
+temp <- markers[["PPvsPOU_EC1"]]
+markers.vectors[["PPvsPOU_EC1"]] <- rownames(temp)[temp[['logFC']] > 1]
+markers.vectors[["POU_EC1vsPP"]] <- rownames(temp)[temp[['logFC']] < -1]
+
+```
+
+# section 1: build tf gene links
+
+```{r}
+# TIvsAC
+degs <- markers.vectors[['TIvsAC']] 
+dars <- DARs_plot$EC_TIvsAC
+dars %<>% gsub(':', '_', .) %>% gsub('-', '_', .) 
+enhancers_df_sub <- enhancers_df[which(enhancers_df$gene %in% degs & enhancers_df$peak %in% dars), ]
+
+network_list <- list()
+for (enhancer in enhancers_df_sub$peak){
+  tfs <- colnames(enhancers_TF_annotation)[which(enhancers_TF_annotation[enhancer, ] == 1)]
+  linkage <- data.frame(tf = tfs, 
+                        target = rep(enhancers_df_sub[which(enhancers_df_sub$peak==enhancer), 'gene'], length(tfs)), 
+                        corr = rep(enhancers_df_sub[which(enhancers_df_sub$peak==enhancer), 'corr'], length(tfs)))
+  network_list[[enhancer]] <- linkage
+  cat(length(network_list), '/', nrow(enhancers_df_sub), '\n')
+}
+
+network <- bind_rows(network_list)
+saveRDS(network, paste0(dir.out, 'network_TIvsAC.rds'))
+
+sort(table(network$tf), decreasing = T)[1:50]
+
+```
+
+```{r}
+# POU1vsPOU2
+degs <- markers.vectors[['POU_EC1vsPOU_EC2']] 
+dars <- DARs_plot$EC_POU1vsPOU2
+dars %<>% gsub(':', '_', .) %>% gsub('-', '_', .) 
+enhancers_df_sub <- enhancers_df[which(enhancers_df$gene %in% degs & enhancers_df$peak %in% dars), ]
+
+network_list <- list()
+for (enhancer in enhancers_df_sub$peak){
+  tfs <- colnames(enhancers_TF_annotation)[which(enhancers_TF_annotation[enhancer, ] == 1)]
+  linkage <- data.frame(tf = tfs, 
+                        target = rep(enhancers_df_sub[which(enhancers_df_sub$peak==enhancer), 'gene'], length(tfs)), 
+                        corr = rep(enhancers_df_sub[which(enhancers_df_sub$peak==enhancer), 'corr'], length(tfs)))
+  network_list[[enhancer]] <- linkage
+  cat(length(network_list), '/', nrow(enhancers_df_sub), '\n')
+}
+
+network <- bind_rows(network_list)
+saveRDS(network, paste0(dir.out, 'network_POU_EC1vsPOU_EC2.rds'))
+
+sort(table(network$tf), decreasing = T)[1:50]
+```
+
+```{r}
+# PPvsPOU2
+degs <- markers.vectors[['PPvsPOU_EC2']] 
+dars <- DARs_plot$EC_PPvsPOU2
+dars %<>% gsub(':', '_', .) %>% gsub('-', '_', .) 
+enhancers_df_sub <- enhancers_df[which(enhancers_df$gene %in% degs & enhancers_df$peak %in% dars), ]
+
+network_list <- list()
+for (enhancer in enhancers_df_sub$peak){
+  tfs <- colnames(enhancers_TF_annotation)[which(enhancers_TF_annotation[enhancer, ] == 1)]
+  linkage <- data.frame(tf = tfs, 
+                        target = rep(enhancers_df_sub[which(enhancers_df_sub$peak==enhancer), 'gene'], length(tfs)), 
+                        corr = rep(enhancers_df_sub[which(enhancers_df_sub$peak==enhancer), 'corr'], length(tfs)))
+  network_list[[enhancer]] <- linkage
+  cat(length(network_list), '/', nrow(enhancers_df_sub), '\n')
+}
+
+network <- bind_rows(network_list)
+saveRDS(network, paste0(dir.out, 'network_PPvsPOU_EC2.rds'))
+
+sort(table(network$tf), decreasing = T)[1:50]
+```
+
+
+
+```{r}
+# ACvsTI
+degs <- markers.vectors[['ACvsTI']] 
+dars <- DARs_plot$EC_ACvsTI
+dars %<>% gsub(':', '_', .) %>% gsub('-', '_', .) 
+enhancers_df_sub <- enhancers_df[which(enhancers_df$gene %in% degs & enhancers_df$peak %in% dars), ]
+
+network_list <- list()
+for (enhancer in enhancers_df_sub$peak){
+  tfs <- colnames(enhancers_TF_annotation)[which(enhancers_TF_annotation[enhancer, ] == 1)]
+  linkage <- data.frame(tf = tfs, 
+                        target = rep(enhancers_df_sub[which(enhancers_df_sub$peak==enhancer), 'gene'], length(tfs)), 
+                        corr = rep(enhancers_df_sub[which(enhancers_df_sub$peak==enhancer), 'corr'], length(tfs)))
+  network_list[[enhancer]] <- linkage
+  cat(length(network_list), '/', nrow(enhancers_df_sub), '\n')
+}
+
+network <- bind_rows(network_list)
+saveRDS(network, paste0(dir.out, 'network_ACvsTI.rds'))
+
+sort(table(network$tf), decreasing = T)[1:50]
+
+```
+
+
+```{r}
+# POU_EC2vsPOU_EC1
+degs <- markers.vectors[['POU_EC2vsPOU_EC1']] 
+dars <- DARs_plot$EC_POU2vsPOU1
+dars %<>% gsub(':', '_', .) %>% gsub('-', '_', .) 
+enhancers_df_sub <- enhancers_df[which(enhancers_df$gene %in% degs & enhancers_df$peak %in% dars), ]
+
+network_list <- list()
+for (enhancer in enhancers_df_sub$peak){
+  tfs <- colnames(enhancers_TF_annotation)[which(enhancers_TF_annotation[enhancer, ] == 1)]
+  linkage <- data.frame(tf = tfs, 
+                        target = rep(enhancers_df_sub[which(enhancers_df_sub$peak==enhancer), 'gene'], length(tfs)), 
+                        corr = rep(enhancers_df_sub[which(enhancers_df_sub$peak==enhancer), 'corr'], length(tfs)))
+  network_list[[enhancer]] <- linkage
+  cat(length(network_list), '/', nrow(enhancers_df_sub), '\n')
+}
+
+network <- bind_rows(network_list)
+saveRDS(network, paste0(dir.out, 'network_POU_EC2vsPOU_EC1.rds'))
+
+sort(table(network$tf), decreasing = T)[1:50]
+
+```
+
+
+```{r}
+# POU_EC2vsPP
+degs <- markers.vectors[['POU_EC2vsPP']] 
+dars <- DARs_plot$EC_POU2vsPP
+dars %<>% gsub(':', '_', .) %>% gsub('-', '_', .) 
+enhancers_df_sub <- enhancers_df[which(enhancers_df$gene %in% degs & enhancers_df$peak %in% dars), ]
+
+network_list <- list()
+for (enhancer in enhancers_df_sub$peak){
+  tfs <- colnames(enhancers_TF_annotation)[which(enhancers_TF_annotation[enhancer, ] == 1)]
+  linkage <- data.frame(tf = tfs, 
+                        target = rep(enhancers_df_sub[which(enhancers_df_sub$peak==enhancer), 'gene'], length(tfs)), 
+                        corr = rep(enhancers_df_sub[which(enhancers_df_sub$peak==enhancer), 'corr'], length(tfs)))
+  network_list[[enhancer]] <- linkage
+  cat(length(network_list), '/', nrow(enhancers_df_sub), '\n')
+}
+
+network <- bind_rows(network_list)
+saveRDS(network, paste0(dir.out, 'network_POU_EC2vsPP.rds'))
+
+sort(table(network$tf), decreasing = T)[1:50]
+
+```
+
+# section 2: update tf controbution by sum of averaged weights for each target
+
+```{r}
+network <- readRDS(paste0(dir.out, 'network_TIvsAC.rds'))
+# network$tf_contribution <- 0
+# for (target in unique(network$target)){
+#   average_tf_contribution <- 1/sum(network$target == target)
+#   network$tf_contribution[which(network$target == target)] <- average_tf_contribution
+# }
+# 
+# network$tf_contribution_sum <- 0
+# for (tf in unique(network$tf)){
+#   sum_tf_contribution <- sum(network$tf_contribution[which(network$tf == tf)])
+#   network$tf_contribution_sum[which(network$tf == tf)] <- sum_tf_contribution
+# }
+# 
+# saveRDS(network, paste0(dir.out, 'network_TIvsAC.rds'))
+View(unique(network[, c('tf', 'tf_contribution_sum')]))
+```
+
+
+```{r}
+network <- readRDS(paste0(dir.out, 'network_POU_EC1vsPOU_EC2.rds'))
+# network$tf_contribution <- 0
+# for (target in unique(network$target)){
+#   average_tf_contribution <- 1/sum(network$target == target)
+#   network$tf_contribution[which(network$target == target)] <- average_tf_contribution
+# }
+# 
+# network$tf_contribution_sum <- 0
+# for (tf in unique(network$tf)){
+#   sum_tf_contribution <- sum(network$tf_contribution[which(network$tf == tf)])
+#   network$tf_contribution_sum[which(network$tf == tf)] <- sum_tf_contribution
+# }
+# 
+# saveRDS(network, paste0(dir.out, 'network_POU_EC1vsPOU_EC2.rds'))
+View(unique(network[, c('tf', 'tf_contribution_sum')]))
+```
+
+
+```{r}
+network <- readRDS(paste0(dir.out, 'network_PPvsPOU_EC2.rds'))
+# network$tf_contribution <- 0
+# for (target in unique(network$target)){
+#   average_tf_contribution <- 1/sum(network$target == target)
+#   network$tf_contribution[which(network$target == target)] <- average_tf_contribution
+# }
+# 
+# network$tf_contribution_sum <- 0
+# for (tf in unique(network$tf)){
+#   sum_tf_contribution <- sum(network$tf_contribution[which(network$tf == tf)])
+#   network$tf_contribution_sum[which(network$tf == tf)] <- sum_tf_contribution
+# }
+# 
+# saveRDS(network, paste0(dir.out, 'network_PPvsPOU_EC2.rds'))
+View(unique(network[, c('tf', 'tf_contribution_sum')]))
+```
+
+
+```{r}
+network <- readRDS(paste0(dir.out, 'network_ACvsTI.rds'))
+# network$tf_contribution <- 0
+# for (target in unique(network$target)){
+#   average_tf_contribution <- 1/sum(network$target == target)
+#   network$tf_contribution[which(network$target == target)] <- average_tf_contribution
+# }
+# 
+# network$tf_contribution_sum <- 0
+# for (tf in unique(network$tf)){
+#   sum_tf_contribution <- sum(network$tf_contribution[which(network$tf == tf)])
+#   network$tf_contribution_sum[which(network$tf == tf)] <- sum_tf_contribution
+# }
+# 
+# saveRDS(network, paste0(dir.out, 'network_ACvsTI.rds'))
+View(unique(network[, c('tf', 'tf_contribution_sum')]))
+```
+
+
+```{r}
+network <- readRDS(paste0(dir.out, 'network_POU_EC2vsPOU_EC1.rds'))
+# network$tf_contribution <- 0
+# for (target in unique(network$target)){
+#   average_tf_contribution <- 1/sum(network$target == target)
+#   network$tf_contribution[which(network$target == target)] <- average_tf_contribution
+# }
+# 
+# network$tf_contribution_sum <- 0
+# for (tf in unique(network$tf)){
+#   sum_tf_contribution <- sum(network$tf_contribution[which(network$tf == tf)])
+#   network$tf_contribution_sum[which(network$tf == tf)] <- sum_tf_contribution
+# }
+# 
+# saveRDS(network, paste0(dir.out, 'network_POU_EC2vsPOU_EC1.rds'))
+View(unique(network[, c('tf', 'tf_contribution_sum')]))
+```
+
+
+```{r}
+network <- readRDS(paste0(dir.out, 'network_POU_EC2vsPP.rds'))
+# network$tf_contribution <- 0
+# for (target in unique(network$target)){
+#   average_tf_contribution <- 1/sum(network$target == target)
+#   network$tf_contribution[which(network$target == target)] <- average_tf_contribution
+# }
+# 
+# network$tf_contribution_sum <- 0
+# for (tf in unique(network$tf)){
+#   sum_tf_contribution <- sum(network$tf_contribution[which(network$tf == tf)])
+#   network$tf_contribution_sum[which(network$tf == tf)] <- sum_tf_contribution
+# }
+# 
+# saveRDS(network, paste0(dir.out, 'network_POU_EC2vsPP.rds'))
+View(unique(network[, c('tf', 'tf_contribution_sum')]))
+```
+
+
+
+
+```{r}
+# cluster2
+enhancers_df_sub <- enhancers_df[enhancers_df$cluster == 2, ]
+
+network_list <- list()
+for (enhancer in enhancers_df_sub$peak){
+  tfs <- colnames(enhancers_TF_annotation)[which(enhancers_TF_annotation[enhancer, ] == 1)]
+  linkage <- data.frame(tf = tfs, 
+                        target = rep(enhancers_df_sub[which(enhancers_df_sub$peak==enhancer), 'gene'], length(tfs)), 
+                        corr = rep(enhancers_df_sub[which(enhancers_df_sub$peak==enhancer), 'corr'], length(tfs)))
+  network_list[[enhancer]] <- linkage
+  cat(length(network_list), '/', nrow(enhancers_df_sub), '\n')
+}
+
+network <- bind_rows(network_list)
+saveRDS(network, paste0(dir.out, 'network_cluster2.rds'))
+
+sort(table(network$tf), decreasing = T)[1:50]
+
+```
+
+
+```{r}
+# cluster5
+enhancers_df_sub <- enhancers_df[enhancers_df$cluster == 5, ]
+
+network_list <- list()
+for (enhancer in enhancers_df_sub$peak){
+  tfs <- colnames(enhancers_TF_annotation)[which(enhancers_TF_annotation[enhancer, ] == 1)]
+  linkage <- data.frame(tf = tfs, 
+                        target = rep(enhancers_df_sub[which(enhancers_df_sub$peak==enhancer), 'gene'], length(tfs)), 
+                        corr = rep(enhancers_df_sub[which(enhancers_df_sub$peak==enhancer), 'corr'], length(tfs)))
+  network_list[[enhancer]] <- linkage
+  cat(length(network_list), '/', nrow(enhancers_df_sub), '\n')
+}
+
+network <- bind_rows(network_list)
+saveRDS(network, paste0(dir.out, 'network_cluster5.rds'))
+
+sort(table(network$tf), decreasing = T)[1:50]
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

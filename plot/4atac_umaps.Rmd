@@ -1,0 +1,443 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(ArchR)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r}
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+out.dir <- '/project/gca/yuzhao1/work/manu/rc2/plots/4atac_umaps/'
+```
+
+
+
+### All cells
+
+```{r}
+proj <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_filtered/")
+```
+
+```{r}
+df <- data.frame(proj@cellColData)
+df$embedding1 <- proj@embeddings$Harmony_UMAP$df$`Harmony#UMAP_Dimension_1`
+df$embedding2 <- proj@embeddings$Harmony_UMAP$df$`Harmony#UMAP_Dimension_2`
+df$cluster_name <- proj$anno1
+
+p<-plot_df_umap_custom(df, show.label = 'name', custom_colors = custom_colors_atac_all,
+                       plot_level = names(atac.unionHeatmap.markers))
+
+pdf(paste0(out.dir, 'union_anno1.pdf'), width = 8, height = 10, pointsize = 1)
+p
+dev.off()
+
+```
+
+```{r}
+df <- data.frame(proj@cellColData)
+df$embedding1 <- proj@embeddings$Harmony_UMAP$df$`Harmony#UMAP_Dimension_1`
+df$embedding2 <- proj@embeddings$Harmony_UMAP$df$`Harmony#UMAP_Dimension_2`
+df$cluster_name <- proj$anno1
+
+p<-plot_df_umap_custom(df, show.label = 'na', custom_colors = custom_colors_atac_all,
+                       plot_level = names(atac.unionHeatmap.markers))
+
+pdf(paste0(out.dir, 'union_anno1_NoName.pdf'), width = 8, height = 10, pointsize = 1)
+p
+dev.off()
+
+```
+
+```{r}
+df <- data.frame(proj@cellColData)
+df$embedding1 <- proj@embeddings$Harmony_UMAP$df$`Harmony#UMAP_Dimension_1`
+df$embedding2 <- proj@embeddings$Harmony_UMAP$df$`Harmony#UMAP_Dimension_2`
+df$cluster_name <- proj$anno1
+
+p <- plot_df_umap_custom(df, show.label = 'number', custom_colors = custom_colors_atac_all,
+                         plot_level = names(atac.unionHeatmap.markers))
+
+pdf(paste0(out.dir, 'union_anno1_number.pdf'), width = 8, height = 10, pointsize = 1)
+p
+dev.off()
+
+```
+
+```{r}
+df <- data.frame(proj@cellColData)
+df$embedding1 <- proj@embeddings$Harmony_UMAP$df$`Harmony#UMAP_Dimension_1`
+df$embedding2 <- proj@embeddings$Harmony_UMAP$df$`Harmony#UMAP_Dimension_2`
+df$cluster_name <- proj$lineage
+
+p<-plot_df_umap_custom(df, show.label = 'number', custom_colors = custom_colors_atac_lineage)
+p
+
+pdf(paste0(out.dir, 'union_anno1.pdf'), width = 4.5, height = 5, pointsize = 1)
+p
+dev.off()
+
+```
+
+
+```{r}
+df <- data.frame(proj@cellColData)
+df$embedding1 <- proj@embeddings$Harmony_UMAP$df$`Harmony#UMAP_Dimension_1`
+df$embedding2 <- proj@embeddings$Harmony_UMAP$df$`Harmony#UMAP_Dimension_2`
+df$cluster_name <- proj$lineage
+
+p<-plot_df_umap_custom(df, show.label = 'na', custom_colors = custom_colors_atac_lineage)
+p
+
+pdf(paste0(out.dir, 'lineage.pdf'), width = 4.5, height = 5, pointsize = 1)
+p
+dev.off()
+
+```
+
+
+### immune cells
+
+```{r}
+proj <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_immune_filtered/")
+```
+
+```{r}
+unique(proj$anno1)[which(!unique(proj$anno1) %in% names(custom_colors_atac_immune))]
+```
+
+```{r}
+df <- data.frame(proj@cellColData)
+df$embedding1 <- proj@embeddings$Harmony_UMAP$df$`Harmony#UMAP_Dimension_1`
+df$embedding2 <- proj@embeddings$Harmony_UMAP$df$`Harmony#UMAP_Dimension_2`
+df$cluster_name <- proj$anno1
+df$biopsy_location <- factor(df$biopsy_location, levels = c('TI','PP','POU','AC'))
+
+df$Sample_corrected <- factor(df$Sample_corrected,
+                              levels = c("HA01-TI","HA02-TI","HA04-TI","HA50-TI","HA51-TI","HA55-TI",
+                                         "HA01-AC","HA02-AC","HA04-AC","HA50-AC","HA51-AC","HA55-AC",
+                                         "OR101-PP","OR102-PP","OR109-PP","OR43-PP","OR48-PP","OR72-PP",
+                                         "OR101-POU","OR102-POU","OR109-POU","OR43-POU","OR48-POU","OR72-POU"))
+
+
+p<-plot_df_umap_custom(df, show.label = 'na', custom_colors = custom_colors_atac_immune)
+p
+
+pdf(paste0(out.dir, 'immune.pdf'), width = 6, height = 7, pointsize = 1)
+p
+dev.off()
+
+pdf(paste0(out.dir, 'immune_loc.pdf'), width = 6, height = 7.5, pointsize = 1)
+p +
+  facet_wrap( ~ biopsy_location) +
+  theme(
+    strip.background = element_rect(fill = "white", colour = "white"),
+    strip.text = element_text(size = 12)
+  )
+dev.off()
+
+pdf(paste0(out.dir, 'immune_sample.pdf'), width = 12, height = 10, pointsize = 1)
+p +
+  facet_wrap(~ Sample_corrected, ncol = 6) +
+  theme(
+    strip.background = element_rect(fill = "white", colour = "white"),
+    strip.text = element_text(size = 12)
+  )
+dev.off()
+```
+
+
+### epithelial cells
+
+```{r}
+proj <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_epithelial_filtered2/")
+```
+
+```{r}
+unique(proj$anno1)[which(!unique(proj$anno1) %in% names(custom_colors_atac_epithelial))]
+```
+
+```{r}
+df <- data.frame(proj@cellColData)
+df$embedding1 <- proj@embeddings$Harmony_UMAP$df$`Harmony#UMAP_Dimension_1`
+df$embedding2 <- proj@embeddings$Harmony_UMAP$df$`Harmony#UMAP_Dimension_2`
+df$cluster_name <- proj$anno2
+df$biopsy_location <- factor(df$biopsy_location, levels = c('TI','PP','POU','AC'))
+
+df$Sample_corrected <- factor(df$Sample_corrected,
+                              levels = c("HA01-TI","HA02-TI","HA04-TI","HA50-TI","HA51-TI","HA55-TI",
+                                         "HA01-AC","HA02-AC","HA04-AC","HA50-AC","HA51-AC","HA55-AC",
+                                         "OR101-PP","OR102-PP","OR109-PP","OR43-PP","OR48-PP","OR72-PP",
+                                         "OR101-POU","OR102-POU","OR109-POU","OR43-POU","OR48-POU","OR72-POU"))
+
+
+p<-plot_df_umap_custom(df, show.label = 'na', custom_colors = custom_colors_atac_epithelial_anno2, 
+                       plot_level = names(custom_colors_atac_epithelial_anno2))
+
+pdf(paste0(out.dir, 'epithelial.pdf'),  width = 6, height = 7, pointsize = 1)
+p
+dev.off()
+
+pdf(paste0(out.dir, 'epithelial_loc.pdf'), width = 6, height = 7.5, pointsize = 1)
+p +
+  facet_wrap( ~ biopsy_location) +
+  theme(
+    strip.background = element_rect(fill = "white", colour = "white"),
+    strip.text = element_text(size = 12)
+  )
+dev.off()
+
+pdf(paste0(out.dir, 'epithelial_sample.pdf'), width = 12, height = 10, pointsize = 1)
+p +
+  facet_wrap(~ Sample_corrected, ncol = 6) +
+  theme(
+    strip.background = element_rect(fill = "white", colour = "white"),
+    strip.text = element_text(size = 12)
+  )
+dev.off()
+```
+
+
+
+
+
+### tcell cells
+
+```{r}
+proj <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_tcell_filtered2/")
+```
+
+```{r}
+unique(proj$anno1)[which(!unique(proj$anno1) %in% names(custom_colors_atac_tcell))]
+```
+
+```{r}
+df <- data.frame(proj@cellColData)
+df$embedding1 <- proj@embeddings$Harmony_UMAP$df$`Harmony#UMAP_Dimension_1`
+df$embedding2 <- proj@embeddings$Harmony_UMAP$df$`Harmony#UMAP_Dimension_2`
+df$cluster_name <- proj$anno1
+df$biopsy_location <- factor(df$biopsy_location, levels = c('TI','PP','POU','AC'))
+
+df$Sample_corrected <- factor(df$Sample_corrected,
+                              levels = c("HA01-TI","HA02-TI","HA04-TI","HA50-TI","HA51-TI","HA55-TI",
+                                         "HA01-AC","HA02-AC","HA04-AC","HA50-AC","HA51-AC","HA55-AC",
+                                         "OR101-PP","OR102-PP","OR109-PP","OR43-PP","OR48-PP","OR72-PP",
+                                         "OR101-POU","OR102-POU","OR109-POU","OR43-POU","OR48-POU","OR72-POU"))
+
+
+p<-plot_df_umap_custom(df, show.label = 'na', custom_colors = custom_colors_atac_tcell)
+p
+
+pdf(paste0(out.dir, 'tcell.pdf'),  width = 5, height = 6, pointsize = 1)
+p
+dev.off()
+
+pdf(paste0(out.dir, 'tcell_loc.pdf'), width = 5, height = 6.5, pointsize = 1)
+p +
+  facet_wrap( ~ biopsy_location) +
+  theme(
+    strip.background = element_rect(fill = "white", colour = "white"),
+    strip.text = element_text(size = 12)
+  )
+dev.off()
+
+pdf(paste0(out.dir, 'tcell_sample.pdf'), width = 11, height = 9, pointsize = 1)
+p +
+  facet_wrap(~ Sample_corrected, ncol = 6) +
+  theme(
+    strip.background = element_rect(fill = "white", colour = "white"),
+    strip.text = element_text(size = 12)
+  )
+dev.off()
+```
+
+
+
+
+### bcell cells
+
+```{r}
+proj <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_bcell_filtered/")
+```
+
+```{r}
+unique(proj$anno1)[which(!unique(proj$anno1) %in% names(custom_colors_atac_bcell))]
+```
+
+```{r}
+df <- data.frame(proj@cellColData)
+df$embedding1 <- proj@embeddings$Harmony_UMAP$df$`Harmony#UMAP_Dimension_1`
+df$embedding2 <- proj@embeddings$Harmony_UMAP$df$`Harmony#UMAP_Dimension_2`
+df$cluster_name <- proj$anno1
+df$biopsy_location <- factor(df$biopsy_location, levels = c('TI','PP','POU','AC'))
+
+df$Sample_corrected <- factor(df$Sample_corrected,
+                              levels = c("HA01-TI","HA02-TI","HA04-TI","HA50-TI","HA51-TI","HA55-TI",
+                                         "HA01-AC","HA02-AC","HA04-AC","HA50-AC","HA51-AC","HA55-AC",
+                                         "OR101-PP","OR102-PP","OR109-PP","OR43-PP","OR48-PP","OR72-PP",
+                                         "OR101-POU","OR102-POU","OR109-POU","OR43-POU","OR48-POU","OR72-POU"))
+
+
+p<-plot_df_umap_custom(df, show.label = 'na', custom_colors = custom_colors_atac_bcell)
+p
+
+pdf(paste0(out.dir, 'bcell.pdf'),  width = 6, height = 6.5, pointsize = 1)
+p
+dev.off()
+
+pdf(paste0(out.dir, 'bcell_loc.pdf'), width = 6, height = 7, pointsize = 1)
+p +
+  facet_wrap( ~ biopsy_location) +
+  theme(
+    strip.background = element_rect(fill = "white", colour = "white"),
+    strip.text = element_text(size = 12)
+  )
+dev.off()
+
+pdf(paste0(out.dir, 'bcell_sample.pdf'), width = 12, height = 10, pointsize = 1)
+p +
+  facet_wrap(~ Sample_corrected, ncol = 6) +
+  theme(
+    strip.background = element_rect(fill = "white", colour = "white"),
+    strip.text = element_text(size = 12)
+  )
+dev.off()
+```
+
+
+
+
+
+
+
+### myeloid cells
+
+```{r}
+proj <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_myeloid_filtered2/")
+```
+
+```{r}
+unique(proj$anno1)[which(!unique(proj$anno1) %in% names(custom_colors_atac_myeloid))]
+```
+
+```{r}
+df <- data.frame(proj@cellColData)
+df$embedding1 <- proj@embeddings$Harmony_UMAP$df$`Harmony#UMAP_Dimension_1`
+df$embedding2 <- proj@embeddings$Harmony_UMAP$df$`Harmony#UMAP_Dimension_2`
+df$cluster_name <- proj$anno1
+df$biopsy_location <- factor(df$biopsy_location, levels = c('TI','PP','POU','AC'))
+
+df$Sample_corrected <- factor(df$Sample_corrected,
+                              levels = c("HA01-TI","HA02-TI","HA04-TI","HA50-TI","HA51-TI","HA55-TI",
+                                         "HA01-AC","HA02-AC","HA04-AC","HA50-AC","HA51-AC","HA55-AC",
+                                         "OR101-PP","OR102-PP","OR109-PP","OR43-PP","OR48-PP","OR72-PP",
+                                         "OR101-POU","OR102-POU","OR109-POU","OR43-POU","OR48-POU","OR72-POU"))
+
+
+p<-plot_df_umap_custom(df, show.label = 'na', custom_colors = custom_colors_atac_myeloid)
+p
+
+pdf(paste0(out.dir, 'myeloid.pdf'),  width = 4, height = 4.7, pointsize = 1)
+p
+dev.off()
+
+pdf(paste0(out.dir, 'myeloid_loc.pdf'), width = 5, height = 6, pointsize = 1)
+p +
+  facet_wrap( ~ biopsy_location) +
+  theme(
+    strip.background = element_rect(fill = "white", colour = "white"),
+    strip.text = element_text(size = 12)
+  )
+dev.off()
+
+pdf(paste0(out.dir, 'myeloid_sample.pdf'), width = 9, height = 8, pointsize = 1)
+p +
+  facet_wrap(~ Sample_corrected, ncol = 6) +
+  theme(
+    strip.background = element_rect(fill = "white", colour = "white"),
+    strip.text = element_text(size = 12)
+  )
+dev.off()
+```
+
+
+
+
+### others cells
+
+```{r}
+proj <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_others_filtered2/")
+```
+
+```{r}
+unique(proj$anno1)[which(!unique(proj$anno1) %in% names(custom_colors_atac_others))]
+```
+
+```{r}
+df <- data.frame(proj@cellColData)
+df$embedding1 <- proj@embeddings$Harmony_UMAP$df$`Harmony#UMAP_Dimension_1`
+df$embedding2 <- proj@embeddings$Harmony_UMAP$df$`Harmony#UMAP_Dimension_2`
+df$cluster_name <- proj$anno1
+df$biopsy_location <- factor(df$biopsy_location, levels = c('TI','PP','POU','AC'))
+
+df$Sample_corrected <- factor(df$Sample_corrected,
+                              levels = c("HA01-TI","HA02-TI","HA04-TI","HA50-TI","HA51-TI","HA55-TI",
+                                         "HA01-AC","HA02-AC","HA04-AC","HA50-AC","HA51-AC","HA55-AC",
+                                         "OR101-PP","OR102-PP","OR109-PP","OR43-PP","OR48-PP","OR72-PP",
+                                         "OR101-POU","OR102-POU","OR109-POU","OR43-POU","OR48-POU","OR72-POU"))
+
+
+p<-plot_df_umap_custom(df, show.label = 'na', custom_colors = custom_colors_atac_others)
+p
+
+pdf(paste0(out.dir, 'others.pdf'),  width = 5, height = 6, pointsize = 1)
+p
+dev.off()
+
+pdf(paste0(out.dir, 'others_loc.pdf'), width = 5, height = 6.5, pointsize = 1)
+p +
+  facet_wrap( ~ biopsy_location) +
+  theme(
+    strip.background = element_rect(fill = "white", colour = "white"),
+    strip.text = element_text(size = 12)
+  )
+dev.off()
+
+pdf(paste0(out.dir, 'others_sample.pdf'), width = 9, height = 8, pointsize = 1)
+p +
+  facet_wrap(~ Sample_corrected, ncol = 6) +
+  theme(
+    strip.background = element_rect(fill = "white", colour = "white"),
+    strip.text = element_text(size = 12)
+  )
+dev.off()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

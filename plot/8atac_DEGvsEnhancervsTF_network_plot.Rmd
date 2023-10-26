@@ -1,0 +1,800 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(ArchR)
+library(parallel)
+library(BSgenome.Hsapiens.UCSC.hg38)
+
+library(igraph)
+library(ggplot2)
+library(ggraph)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('~/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+source('~/yuzhao1/work/manu/rc2/scripts/rna_deg_markers.R')
+source('~/yuzhao1/work/manu/rc2/scripts/tfs.R')
+```
+
+```{r}
+
+cisCor <- readRDS(paste0('~/yuzhao1/work/final_RC2atac/figr/epithelial_rds/', 'cisCorr.rds'))
+cisCor.filt <- cisCor %>% filter(pvalZ <= 0.05)
+dorcGenes <- head(sort(table(cisCor.filt$Gene), decreasing = T), 100)%>%names()
+
+labels <- unique(c('DMBT1',  'MUC2', 'OLFM4',  'LCN2', 'SATB2',
+            'ADH1C', 'SATB2', 'CEACAM7', 'CA2', 'AQP8', 'HES1', 'NXPE4', 'HMGCS2',
+            'RPSA', 'CFTR', 'RPL11', 'CEACAM5', 'SOX9', 'MECOM', 'TFCP2L1', 'CD24','FCGBP',
+            'GSTA1', 'ACE2', 'RBP2', 'APOA4', 'FABP6', 'HLA−DRA','ABCC2', 'ENPEP',
+            "REG1B", "FOXD1", "GATA5", "KLF7", "REG4", "IRF8", 
+            "STAT6", "STAT5", "SATB1", 
+            "HOXB7","MT1A", "KLF11" ,"MT1A", "ABCB9",
+            "REG3A","TUBA1B", 
+            "FABP1", "KRT20","ZBTB7B",
+            "DEFA6", "DEFA5", "CLCA1", "TFF1", 'ATOH1', tf_genes_refined, dorcGenes))
+
+
+epithelial_dorc_genes <- readRDS('~/yuzhao1/work/final_RC2atac/figr/epithelial_rds/dorcGenes.rds')
+df <- head(sort(table(cisCor.filt$Gene), decreasing = T), length(epithelial_dorc_genes))
+df2 <- data.frame(names(df), df)
+df2$names.df. <-NULL
+colnames(df2) <- c('dorc gene', '#associated regions')
+# write.table(df2, '~/yuzhao1/work/manu/rc2/plots/8dorc/epithelial_dorc_genes.csv', row.names = F, sep = ',')
+
+```
+
+
+```{r}
+dir.out <- '~/yuzhao1/work/manu/rc2/plots/8atac_DEGvsEnhancervsTF_network/'
+tfs.c <-  c('CDX1', 'FOXP1', 'KLF5', 'EHF',  'NFIA', 'GATA6',
+            'BACH1', 'ESRRG', 'MAF', 'TBX3',
+            'HNF4G',  'NR1H4', 'PPARA')
+# tfs.c <- tf_genes_ec
+
+```
+
+# 1. pou1 pou2 
+
+```{r}
+plot.title <- 'network_pou1_pou2'
+# optionally filter the genes that are lowly expressed in this specific contrast
+union <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/gut_filtered.rds')
+seurat <- subset(union, cells = Cells(union)[union$anno1 %in% c('EC1-1', 'EC1-2', "EC2-1", "EC2-2") & union$biopsy_location == 'POU'])
+
+seurat.list <- list()
+for (temp.anno in unique(seurat$anno1_loc)){
+  seurat.list[[temp.anno]] <- subset(seurat, anno1_loc == temp.anno)
+}
+
+genes.broadlyExpressed.pool <- list()
+for (temp.anno in unique(seurat$anno1_loc)){
+  seurat.temp <- seurat.list[[temp.anno]]
+  ncellsPerGene <- rowSums2(seurat.temp@assays$RNA@counts > 0.5) # cutoff is 0.5 gene for a cell (consider >0.5 as 1)
+  genes.broadlyExpressed.idx <- order(ncellsPerGene/ncol(seurat.temp), decreasing = T)[1:3000] # top5000
+  temp <- rownames(seurat.temp)[genes.broadlyExpressed.idx]
+  genes.broadlyExpressed.pool[[temp.anno]] <- temp
+}
+genes.broadlyExpressed.pool_top3k <- unique(unlist(genes.broadlyExpressed.pool))
+
+labels <- intersect(labels, genes.broadlyExpressed.pool_top3k)
+```
+
+
+```{r}
+# 1. df1
+plot.title <- 'network_pou1_pou2'
+network <- readRDS(paste0(dir.out, 'network_POU_EC1vsPOU_EC2.rds'))
+network <- network[network$tf %in% tfs.c,]
+
+# # use top linked nodes
+threshold <- quantile(network$corr, probs = (nrow(network)-100)/nrow(network))
+threshold_labels <- quantile(network$corr, probs = (nrow(network)-300)/nrow(network))
+network1<-network[(network$corr > threshold)| (network$target%in%labels & network$corr>threshold_labels), ]
+
+graph1 <- graph_from_data_frame(network1[,1:2], directed = FALSE)
+
+# 2. df2
+network <- readRDS(paste0(dir.out, 'network_POU_EC2vsPOU_EC1.rds'))
+network <- network[network$tf %in% tfs.c,]
+
+# # use top linked nodes
+threshold <- quantile(network$corr, probs = (nrow(network)-100)/nrow(network))
+threshold_labels <- quantile(network$corr, probs = (nrow(network)-300)/nrow(network))
+network2<-network[(network$corr > threshold)| (network$target%in%labels & network$corr>threshold_labels), ]
+
+
+graph2 <- graph_from_data_frame(network2[,1:2], directed = FALSE)
+
+# 3. merge
+E(graph1)$source <- "#33a02c" # green
+E(graph2)$source <- "#6a3d9a" # purple
+g_combined <- graph.union(graph1, graph2, byname = TRUE)
+E(g_combined)$color <- ifelse(!is.na(E(g_combined)$source_1), E(g_combined)$source_1, E(g_combined)$source_2)
+
+edge_pairs_g1 <- as_edgelist(graph1)
+edge_pairs_g2 <- as_edgelist(graph2)
+edge_pairs_g_all <- as_edgelist(g_combined)
+
+edge.g1.vectors <- c()
+for (i in 1:(0.5*length(edge_pairs_g1))) {
+  xx <- edge_pairs_g1[i, ]
+  edge.g1.vectors <- c(edge.g1.vectors, paste0(xx[[1]], xx[[2]]))
+}
+
+edge.g2.vectors <- c()
+for (i in 1:(0.5*length(edge_pairs_g2))) {
+  xx <- edge_pairs_g2[i, ]
+  edge.g2.vectors <- c(edge.g2.vectors, paste0(xx[[1]], xx[[2]]))
+}
+
+shared_edge_indices <- c()
+for (i in 1:(0.5*length(edge_pairs_g_all))) {
+  xx <- edge_pairs_g_all[i, ]
+  temp <- paste0(xx[[1]], xx[[2]])
+  if(temp%in% edge.g1.vectors & temp%in% edge.g2.vectors){
+    shared_edge_indices <- c(shared_edge_indices, i)
+  }
+}
+
+
+E(g_combined)[shared_edge_indices]$color <- "black"
+E(g_combined)$opacity <- 0.8
+
+V(g_combined)$color <- "#6baed6"
+V(g_combined)[V(g_combined)$name %in% tfs.c]$color <- "#d94801"
+
+############ prune ###############
+min.degree <- 5
+# find TF vertices with degree less than a cutoff
+vertices_to_remove <- which(igraph::degree(g_combined) < min.degree)
+TF_vertices_to_remove <- intersect(tfs.c, names(vertices_to_remove))
+g_combined <- delete_vertices(g_combined, vertices_to_remove[TF_vertices_to_remove])
+
+# remove single vertices
+vertices_to_remove <- which(igraph::degree(g_combined) < 1)
+g_combined <- delete_vertices(g_combined, vertices_to_remove)
+##################################
+layout <- layout_nicely(g_combined)
+
+# pdf(paste0(dir.out, plot.title , '.pdf'), width =10, height = 9)
+# ggraph(g_combined, layout = layout) +
+#   geom_edge_link(aes(alpha = opacity,  edge_colour = color), show.legend = FALSE) +
+#   geom_node_point(aes(color = color), size = 4) +
+#   geom_node_text(aes(label = name), repel = TRUE) +
+#   theme_void() +
+#   scale_edge_color_identity() + # Add this line to use edge colors directly from the attribute
+#   scale_color_identity()
+# # plot(g_combined, vertex.color = V(g_combined)$color, edge.color = E(g_combined)$color, vertex.label.color = "black", vertex.label.cex = 0.8, edge.arrow.size = 0.5)
+# 
+# dev.off()
+# 
+# 
+# saveRDS(names(V(g_combined)), '~/yuzhao1/work/manu/rc2/plots/8atac_DEGvsEnhancervsTF_network/pou1_pou2_PseudoGenesToPlot.rds')
+# saveRDS(names(V(graph1)), '~/yuzhao1/work/manu/rc2/plots/8atac_DEGvsEnhancervsTF_network/pou1_PseudoGenesToPlot.rds')
+# saveRDS(names(V(graph2)), '~/yuzhao1/work/manu/rc2/plots/8atac_DEGvsEnhancervsTF_network/pou2_PseudoGenesToPlot.rds')
+```
+
+```{r}
+# 1. df1
+plot.title <- 'network_acti'
+network <- readRDS(paste0(dir.out, 'network_TIvsAC.rds'))
+network <- network[network$tf %in% tfs.c,]
+
+# # use top linked nodes
+threshold <- quantile(network$corr, probs = (nrow(network)-100)/nrow(network))
+threshold_labels <- quantile(network$corr, probs = (nrow(network)-200)/nrow(network))
+network1<-network[(network$corr > threshold)| (network$target%in%labels & network$corr>threshold_labels), ]
+
+# # if only use dorc genes to label
+# network1 <-network[(network$target%in%labels), ]
+
+graph1 <- graph_from_data_frame(network1[,1:2], directed = FALSE)
+
+
+# 2. df2
+network <- readRDS(paste0(dir.out, 'network_ACvsTI.rds'))
+network <- network[network$tf %in% tfs.c,]
+
+# # use top linked nodes
+threshold <- quantile(network$corr, probs = (nrow(network)-100)/nrow(network))
+threshold_labels <- quantile(network$corr, probs = (nrow(network)-200)/nrow(network))
+network2<-network[(network$corr > threshold)| (network$target%in%labels & network$corr>threshold_labels), ]
+
+# # if only use dorc genes to label
+# network2<-network[(network$target%in%labels), ]
+
+graph2 <- graph_from_data_frame(network2[,1:2], directed = FALSE)
+
+# 3. merge
+E(graph1)$source <- "#33a02c" # green
+E(graph2)$source <- "#6a3d9a" # purple
+g_combined <- graph.union(graph1, graph2, byname = TRUE)
+E(g_combined)$color <- ifelse(!is.na(E(g_combined)$source_1), E(g_combined)$source_1, E(g_combined)$source_2)
+
+edge_pairs_g1 <- as_edgelist(graph1)
+edge_pairs_g2 <- as_edgelist(graph2)
+edge_pairs_g_all <- as_edgelist(g_combined)
+
+edge.g1.vectors <- c()
+for (i in 1:(0.5*length(edge_pairs_g1))) {
+  xx <- edge_pairs_g1[i, ]
+  edge.g1.vectors <- c(edge.g1.vectors, paste0(xx[[1]], xx[[2]]))
+}
+
+edge.g2.vectors <- c()
+for (i in 1:(0.5*length(edge_pairs_g2))) {
+  xx <- edge_pairs_g2[i, ]
+  edge.g2.vectors <- c(edge.g2.vectors, paste0(xx[[1]], xx[[2]]))
+}
+
+shared_edge_indices <- c()
+for (i in 1:(0.5*length(edge_pairs_g_all))) {
+  xx <- edge_pairs_g_all[i, ]
+  temp <- paste0(xx[[1]], xx[[2]])
+  if(temp%in% edge.g1.vectors & temp%in% edge.g2.vectors){
+    shared_edge_indices <- c(shared_edge_indices, i)
+  }
+}
+
+
+E(g_combined)[shared_edge_indices]$color <- "black"
+E(g_combined)$opacity <- 0.8
+
+V(g_combined)$color <- "#6baed6"
+V(g_combined)[V(g_combined)$name %in% tfs.c]$color <- "#d94801"
+
+############ prune ###############
+min.degree <- 5
+# find TF vertices with degree less than a cutoff
+vertices_to_remove <- which(igraph::degree(g_combined) < min.degree)
+TF_vertices_to_remove <- intersect(tfs.c, names(vertices_to_remove))
+g_combined <- delete_vertices(g_combined, vertices_to_remove[TF_vertices_to_remove])
+
+# remove single vertices
+vertices_to_remove <- which(igraph::degree(g_combined) < 1)
+g_combined <- delete_vertices(g_combined, vertices_to_remove)
+##################################
+layout <- layout_nicely(g_combined)
+
+pdf(paste0(dir.out, plot.title , '.pdf'), width =10, height = 9)
+ggraph(g_combined, layout = layout) +
+  geom_edge_link(aes(alpha = opacity,  edge_colour = color), show.legend = FALSE) +
+  geom_node_point(aes(color = color), size = 4) +
+  geom_node_text(aes(label = name), repel = TRUE) +
+  theme_void() +
+  scale_edge_color_identity() + # Add this line to use edge colors directly from the attribute
+  scale_color_identity()
+# plot(g_combined, vertex.color = V(g_combined)$color, edge.color = E(g_combined)$color, vertex.label.color = "black", vertex.label.cex = 0.8, edge.arrow.size = 0.5)
+
+dev.off()
+
+
+saveRDS(names(V(g_combined)), '~/yuzhao1/work/manu/rc2/plots/8atac_DEGvsEnhancervsTF_network/acti_PseudoGenesToPlot.rds')
+saveRDS(names(V(graph1)), '~/yuzhao1/work/manu/rc2/plots/8atac_DEGvsEnhancervsTF_network/ti_PseudoGenesToPlot.rds')
+saveRDS(names(V(graph2)), '~/yuzhao1/work/manu/rc2/plots/8atac_DEGvsEnhancervsTF_network/ac_PseudoGenesToPlot.rds')
+```
+
+
+```{r}
+# 1. df1
+plot.title <- 'network_colon_core'
+network <- readRDS(paste0(dir.out, 'network_ACvsTI.rds'))
+network <- network[network$tf %in% tfs.c,]
+
+# the extended version used more unknown but top labels
+threshold <- quantile(network$corr, probs = (nrow(network)-100)/nrow(network))
+threshold_labels <- quantile(network$corr, probs = (nrow(network)-500)/nrow(network))
+
+network1<-network[(network$corr > threshold)| (network$target%in%labels & network$corr>threshold_labels), ]
+
+graph1 <- graph_from_data_frame(network1[,1:2], directed = FALSE)
+
+# 2. df2
+network <- readRDS(paste0(dir.out, 'network_POU_EC2vsPP.rds'))
+network <- network[network$tf %in% tfs.c,]
+threshold <- quantile(network$corr, probs = (nrow(network)-100)/nrow(network))
+threshold_labels <- quantile(network$corr, probs = (nrow(network)-500)/nrow(network))
+network2<-network[(network$corr > threshold)| (network$target%in%labels & network$corr>threshold_labels), ]
+
+graph2 <- graph_from_data_frame(network2[,1:2], directed = FALSE)
+
+# 3. merge
+E(graph1)$source <- "#33a02c" # green
+E(graph2)$source <- "#6a3d9a" # purple
+g_combined <- graph.union(graph1, graph2, byname = TRUE)
+E(g_combined)$color <- ifelse(!is.na(E(g_combined)$source_1), E(g_combined)$source_1, E(g_combined)$source_2)
+
+edge_pairs_g1 <- as_edgelist(graph1)
+edge_pairs_g2 <- as_edgelist(graph2)
+edge_pairs_g_all <- as_edgelist(g_combined)
+
+edge.g1.vectors <- c()
+for (i in 1:(0.5*length(edge_pairs_g1))) {
+  xx <- edge_pairs_g1[i, ]
+  edge.g1.vectors <- c(edge.g1.vectors, paste0(xx[[1]], xx[[2]]))
+}
+
+edge.g2.vectors <- c()
+for (i in 1:(0.5*length(edge_pairs_g2))) {
+  xx <- edge_pairs_g2[i, ]
+  edge.g2.vectors <- c(edge.g2.vectors, paste0(xx[[1]], xx[[2]]))
+}
+
+shared_edge_indices <- c()
+for (i in 1:(0.5*length(edge_pairs_g_all))) {
+  xx <- edge_pairs_g_all[i, ]
+  temp <- paste0(xx[[1]], xx[[2]])
+  if(temp%in% edge.g1.vectors & temp%in% edge.g2.vectors){
+    shared_edge_indices <- c(shared_edge_indices, i)
+  }
+}
+
+
+E(g_combined)[shared_edge_indices]$color <- "black"
+E(g_combined)$opacity <- 0.8
+
+V(g_combined)$color <- "#6baed6"
+V(g_combined)[V(g_combined)$name %in% tfs.c]$color <- "#d94801"
+
+
+############ prune ###############
+min.degree <- 9
+# find TF vertices with degree less than a cutoff
+vertices_to_remove <- which(igraph::degree(g_combined) < min.degree)
+TF_vertices_to_remove <- intersect(tfs.c, names(vertices_to_remove))
+g_combined <- delete_vertices(g_combined, vertices_to_remove[TF_vertices_to_remove])
+
+# remove single vertices
+vertices_to_remove <- which(igraph::degree(g_combined) < 1)
+g_combined <- delete_vertices(g_combined, vertices_to_remove)
+##################################
+
+layout <- layout_nicely(g_combined)
+pdf(paste0(dir.out, plot.title , '.pdf'), width = 7, height = 6)
+ggraph(g_combined, layout = layout) +
+  geom_edge_link(aes(alpha = opacity,  edge_colour = color), show.legend = FALSE) +
+  geom_node_point(aes(color = color), size = 4) +
+  geom_node_text(aes(label = name), repel = TRUE) +
+  theme_void() +
+  scale_edge_color_identity() + # Add this line to use edge colors directly from the attribute
+  scale_color_identity()
+# plot(g_combined, vertex.color = V(g_combined)$color, edge.color = E(g_combined)$color, vertex.label.color = "black", vertex.label.cex = 0.8, edge.arrow.size = 0.5)
+
+dev.off()
+```
+
+
+
+```{r}
+# 1. df1
+plot.title <- 'network_ileum_core'
+network <- readRDS(paste0(dir.out, 'network_TIvsAC.rds'))
+network <- network[network$tf %in% tfs.c,]
+threshold <- quantile(network$corr, probs = (nrow(network)-100)/nrow(network))
+threshold_labels <- quantile(network$corr, probs = (nrow(network)-500)/nrow(network))
+network1<-network[(network$corr > threshold)| (network$target%in%labels & network$corr>threshold_labels), ]
+
+graph1 <- graph_from_data_frame(network1[,1:2], directed = FALSE)
+
+# 2. df2
+network <- readRDS(paste0(dir.out, 'network_PPvsPOU_EC2.rds'))
+network <- network[network$tf %in% tfs.c,]
+threshold <- quantile(network$corr, probs = (nrow(network)-100)/nrow(network))
+threshold_labels <- quantile(network$corr, probs = (nrow(network)-500)/nrow(network))
+network2<-network[(network$corr > threshold)| (network$target%in%labels & network$corr>threshold_labels), ]
+
+graph2 <- graph_from_data_frame(network2[,1:2], directed = FALSE)
+
+# 3. merge
+E(graph1)$source <- "#33a02c" # green
+E(graph2)$source <- "#6a3d9a" # purple
+g_combined <- graph.union(graph1, graph2, byname = TRUE)
+E(g_combined)$color <- ifelse(!is.na(E(g_combined)$source_1), E(g_combined)$source_1, E(g_combined)$source_2)
+
+edge_pairs_g1 <- as_edgelist(graph1)
+edge_pairs_g2 <- as_edgelist(graph2)
+edge_pairs_g_all <- as_edgelist(g_combined)
+
+edge.g1.vectors <- c()
+for (i in 1:(0.5*length(edge_pairs_g1))) {
+  xx <- edge_pairs_g1[i, ]
+  edge.g1.vectors <- c(edge.g1.vectors, paste0(xx[[1]], xx[[2]]))
+}
+
+edge.g2.vectors <- c()
+for (i in 1:(0.5*length(edge_pairs_g2))) {
+  xx <- edge_pairs_g2[i, ]
+  edge.g2.vectors <- c(edge.g2.vectors, paste0(xx[[1]], xx[[2]]))
+}
+
+shared_edge_indices <- c()
+for (i in 1:(0.5*length(edge_pairs_g_all))) {
+  xx <- edge_pairs_g_all[i, ]
+  temp <- paste0(xx[[1]], xx[[2]])
+  if(temp%in% edge.g1.vectors & temp%in% edge.g2.vectors){
+    shared_edge_indices <- c(shared_edge_indices, i)
+  }
+}
+
+
+E(g_combined)[shared_edge_indices]$color <- "black"
+E(g_combined)$opacity <- 0.8
+
+V(g_combined)$color <- "#6baed6"
+V(g_combined)[V(g_combined)$name %in% tfs.c]$color <- "#d94801"
+
+############ prune ###############
+min.degree <- 9
+# find TF vertices with degree less than a cutoff
+vertices_to_remove <- which(igraph::degree(g_combined) < min.degree)
+TF_vertices_to_remove <- intersect(tfs.c, names(vertices_to_remove))
+g_combined <- delete_vertices(g_combined, vertices_to_remove[TF_vertices_to_remove])
+
+# remove single vertices
+vertices_to_remove <- which(igraph::degree(g_combined) < 1)
+g_combined <- delete_vertices(g_combined, vertices_to_remove)
+##################################
+
+layout <- layout_nicely(g_combined)
+
+pdf(paste0(dir.out, plot.title , '.pdf'), width = 7, height = 6)
+ggraph(g_combined, layout = layout) +
+  geom_edge_link(aes(alpha = opacity,  edge_colour = color), show.legend = FALSE) +
+  geom_node_point(aes(color = color), size = 4) +
+  geom_node_text(aes(label = name), repel = TRUE) +
+  theme_void() +
+  scale_edge_color_identity() + # Add this line to use edge colors directly from the attribute
+  scale_color_identity()
+# plot(g_combined, vertex.color = V(g_combined)$color, edge.color = E(g_combined)$color, vertex.label.color = "black", vertex.label.cex = 0.8, edge.arrow.size = 0.5)
+
+dev.off()
+```
+
+
+
+
+
+```{r}
+# 1. df1
+plot.title <- 'network_pppou'
+network <- readRDS(paste0(dir.out, 'network_PPvsPOU_EC2.rds'))
+network <- network[network$tf %in% tfs.c,]
+threshold <- quantile(network$corr, probs = (nrow(network)-100)/nrow(network))
+threshold_labels <- quantile(network$corr, probs = (nrow(network)-200)/nrow(network))
+network1<-network[(network$corr > threshold)| (network$target%in%labels & network$corr>threshold_labels), ]
+
+graph1 <- graph_from_data_frame(network1[,1:2], directed = FALSE)
+
+# 2. df2
+network <- readRDS(paste0(dir.out, 'network_POU_EC2vsPP.rds'))
+network <- network[network$tf %in% tfs.c,]
+threshold <- quantile(network$corr, probs = (nrow(network)-100)/nrow(network))
+threshold_labels <- quantile(network$corr, probs = (nrow(network)-200)/nrow(network))
+network2<-network[(network$corr > threshold)| (network$target%in%labels & network$corr>threshold_labels), ]
+
+graph2 <- graph_from_data_frame(network2[,1:2], directed = FALSE)
+
+# 3. merge
+E(graph1)$source <- "#33a02c" # green
+E(graph2)$source <- "#6a3d9a" # purple
+g_combined <- graph.union(graph1, graph2, byname = TRUE)
+E(g_combined)$color <- ifelse(!is.na(E(g_combined)$source_1), E(g_combined)$source_1, E(g_combined)$source_2)
+
+edge_pairs_g1 <- as_edgelist(graph1)
+edge_pairs_g2 <- as_edgelist(graph2)
+edge_pairs_g_all <- as_edgelist(g_combined)
+
+edge.g1.vectors <- c()
+for (i in 1:(0.5*length(edge_pairs_g1))) {
+  xx <- edge_pairs_g1[i, ]
+  edge.g1.vectors <- c(edge.g1.vectors, paste0(xx[[1]], xx[[2]]))
+}
+
+edge.g2.vectors <- c()
+for (i in 1:(0.5*length(edge_pairs_g2))) {
+  xx <- edge_pairs_g2[i, ]
+  edge.g2.vectors <- c(edge.g2.vectors, paste0(xx[[1]], xx[[2]]))
+}
+
+shared_edge_indices <- c()
+for (i in 1:(0.5*length(edge_pairs_g_all))) {
+  xx <- edge_pairs_g_all[i, ]
+  temp <- paste0(xx[[1]], xx[[2]])
+  if(temp%in% edge.g1.vectors & temp%in% edge.g2.vectors){
+    shared_edge_indices <- c(shared_edge_indices, i)
+  }
+}
+
+
+E(g_combined)[shared_edge_indices]$color <- "black"
+E(g_combined)$opacity <- 0.8
+
+V(g_combined)$color <- "#6baed6"
+V(g_combined)[V(g_combined)$name %in% tfs.c]$color <- "#d94801"
+
+############ prune ###############
+min.degree <- 9
+# find TF vertices with degree less than a cutoff
+vertices_to_remove <- which(igraph::degree(g_combined) < min.degree)
+TF_vertices_to_remove <- intersect(tfs.c, names(vertices_to_remove))
+g_combined <- delete_vertices(g_combined, vertices_to_remove[TF_vertices_to_remove])
+
+# remove single vertices
+vertices_to_remove <- which(igraph::degree(g_combined) < 1)
+g_combined <- delete_vertices(g_combined, vertices_to_remove)
+##################################
+
+layout <- layout_nicely(g_combined)
+
+pdf(paste0(dir.out, plot.title , '.pdf'), width = 10, height =9)
+ggraph(g_combined, layout = layout) +
+  geom_edge_link(aes(alpha = opacity,  edge_colour = color), show.legend = FALSE) +
+  geom_node_point(aes(color = color), size = 4) +
+  geom_node_text(aes(label = name), repel = TRUE) +
+  theme_void() +
+  scale_edge_color_identity() + # Add this line to use edge colors directly from the attribute
+  scale_color_identity()
+# plot(g_combined, vertex.color = V(g_combined)$color, edge.color = E(g_combined)$color, vertex.label.color = "black", vertex.label.cex = 0.8, edge.arrow.size = 0.5)
+
+dev.off()
+```
+
+
+
+
+
+
+
+```{r}
+plot.title <- 'network_TIvsAC'
+network <- readRDS(paste0(dir.out, 'network_TIvsAC.rds'))
+# View(network)
+network <- network[network$tf %in% c('BACH1', 
+                                     'TCF7L2', 'NFE2L2', 'ESRRG', 'NR1H4', 'NR5A2',
+                                     'MAF','HNF4G', 'MECOM', 'PPARA', 
+                                     'CDX2', 'KLF3','KLF5', 
+                                     'FOXP2','FOXN3', 'ELF1',
+                                     'ETS2', 'SOX6', 'NFIA',
+                                     'HNF4G'),]
+# thredhols to show_100_targets
+threshold <- quantile(network$corr, probs = (nrow(network)-100)/nrow(network))
+threshold_labels <- quantile(network$corr, probs = (nrow(network)-500)/nrow(network))
+network<-network[(network$corr > threshold)| (network$target%in%labels & network$corr>threshold_labels), ]
+
+graph <- graph_from_data_frame(network[,1:3], directed = FALSE)
+V(graph)$color <- ifelse(V(graph)$name %in% unique(network$tf), "#d94801", "#6baed6")
+# E(graph)$opacity <- abs(E(graph)$corr) # Assuming correlation is between -1 and 1
+E(graph)$opacity <- 1 # Assuming correlation is between -1 and 1
+
+# layout <- layout_with_graphopt(graph, niter = 500,  mass = 3)
+# layout <- layout_with_fr(graph, niter = 500, area = 10000)
+layout <- layout_nicely(graph)
+# layout <- layout_with_fr(graph, niter = 500, area = 10000)
+
+pdf(paste0(dir.out, plot.title , '.pdf'), width = 7, height = 6)
+
+ggraph(graph, layout = layout) +
+  geom_edge_link(aes(alpha = opacity), edge_colour = "#969696", show.legend = FALSE) +
+  geom_node_point(aes(color = color), size = 4) +
+  geom_node_text(aes(label = name), repel = TRUE) +
+  theme_void() +
+  scale_color_identity()
+
+dev.off()
+```
+
+
+
+
+
+```{r}
+plot.title <- 'network_ACvsTI'
+network <- readRDS(paste0(dir.out, 'network_ACvsTI.rds'))
+# View(network)
+network <- network[network$tf %in% c('BACH1', 
+                                     'TCF7L2', 'NFE2L2', 'ESRRG', 'NR1H4', 'NR5A2',
+                                     'MAF','HNF4G', 'MECOM', 'PPARA', 
+                                     'CDX2', 'KLF3','KLF5', 
+                                     'FOXP2','FOXN3', 'ELF1',
+                                     'ETS2', 'SOX6', 'NFIA',
+                                     'HNF4G'),]
+# thredhols to show_100_targets
+threshold <- quantile(network$corr, probs = (nrow(network)-100)/nrow(network))
+threshold_labels <- quantile(network$corr, probs = (nrow(network)-500)/nrow(network))
+network<-network[(network$corr > threshold)| (network$target%in%labels & network$corr>threshold_labels), ]
+
+
+graph <- graph_from_data_frame(network[,1:3], directed = FALSE)
+V(graph)$color <- ifelse(V(graph)$name %in% unique(network$tf), "#d94801", "#6baed6")
+# E(graph)$opacity <- abs(E(graph)$corr) # Assuming correlation is between -1 and 1
+E(graph)$opacity <- 1 # Assuming correlation is between -1 and 1
+
+# layout <- layout_with_graphopt(graph, niter = 500,  mass = 3)
+# layout <- layout_with_fr(graph, niter = 500, area = 10000)
+layout <- layout_nicely(graph)
+
+pdf(paste0(dir.out, plot.title , '.pdf'), width = 7, height = 6)
+
+ggraph(graph, layout = layout) +
+  geom_edge_link(aes(alpha = opacity), edge_colour = "grey", show.legend = FALSE) +
+  geom_node_point(aes(color = color), size = 4) +
+  geom_node_text(aes(label = name), repel = TRUE) +
+  theme_void() +
+  scale_color_identity()
+
+dev.off()
+```
+
+
+```{r}
+plot.title <- 'network_PPvsPOU_EC2'
+network <- readRDS(paste0(dir.out, 'network_PPvsPOU_EC2.rds'))
+# View(network)
+network <- network[network$tf %in% c('BACH1', 
+                                     'TCF7L2', 'NFE2L2', 'ESRRG', 'NR1H4', 'NR5A2',
+                                     'MAF','HNF4G', 'MECOM', 'PPARA', 
+                                     'CDX2', 'KLF3','KLF5', 
+                                     'FOXP2','FOXN3', 'ELF1',
+                                     'ETS2', 'SOX6', 'NFIA',
+                                     'HNF4G'),]
+# thredhols to show_100_targets
+threshold <- quantile(network$corr, probs = (nrow(network)-100)/nrow(network))
+threshold_labels <- quantile(network$corr, probs = (nrow(network)-500)/nrow(network))
+network<-network[(network$corr > threshold)| (network$target%in%labels & network$corr>threshold_labels), ]
+
+graph <- graph_from_data_frame(network[,1:3], directed = FALSE)
+V(graph)$color <- ifelse(V(graph)$name %in% unique(network$tf), "#d94801", "#6baed6")
+# E(graph)$opacity <- abs(E(graph)$corr) # Assuming correlation is between -1 and 1
+E(graph)$opacity <- 1 # Assuming correlation is between -1 and 1
+
+# layout <- layout_with_graphopt(graph, niter = 500,  mass = 3)
+# layout <- layout_with_fr(graph, niter = 500, area = 10000)
+layout <- layout_nicely(graph)
+
+pdf(paste0(dir.out, plot.title , '.pdf'), width = 7, height = 6)
+
+ggraph(graph, layout = layout) +
+  geom_edge_link(aes(alpha = opacity), edge_colour = "grey", show.legend = FALSE) +
+  geom_node_point(aes(color = color), size = 4) +
+  geom_node_text(aes(label = name), repel = TRUE) +
+  theme_void() +
+  scale_color_identity()
+
+dev.off()
+```
+
+
+```{r}
+plot.title <- 'network_POU_EC2vsPP'
+network <- readRDS(paste0(dir.out, 'network_POU_EC2vsPP.rds'))
+# View(network)
+network <- network[network$tf %in% c('BACH1', 
+                                     'TCF7L2', 'NFE2L2', 'ESRRG', 'NR1H4', 'NR5A2',
+                                     'MAF','HNF4G', 'MECOM', 'PPARA', 
+                                     'CDX2', 'KLF3','KLF5', 
+                                     'FOXP2','FOXN3', 'ELF1',
+                                     'ETS2', 'SOX6', 'NFIA',
+                                     'HNF4G'),]
+# thredhols to show_100_targets
+threshold <- quantile(network$corr, probs = (nrow(network)-100)/nrow(network))
+threshold_labels <- quantile(network$corr, probs = (nrow(network)-500)/nrow(network))
+network<-network[(network$corr > threshold)| (network$target%in%labels & network$corr>threshold_labels), ]
+
+graph <- graph_from_data_frame(network[,1:3], directed = FALSE)
+V(graph)$color <- ifelse(V(graph)$name %in% unique(network$tf), "#d94801", "#6baed6")
+# E(graph)$opacity <- abs(E(graph)$corr) # Assuming correlation is between -1 and 1
+E(graph)$opacity <- 1 # Assuming correlation is between -1 and 1
+
+# layout <- layout_with_graphopt(graph, niter = 500,  mass = 3)
+# layout <- layout_with_fr(graph, niter = 500, area = 10000)
+layout <- layout_nicely(graph)
+
+pdf(paste0(dir.out, plot.title , '.pdf'), width = 7, height = 6)
+
+ggraph(graph, layout = layout) +
+  geom_edge_link(aes(alpha = opacity), edge_colour = "grey", show.legend = FALSE) +
+  geom_node_point(aes(color = color), size = 4) +
+  geom_node_text(aes(label = name), repel = TRUE) +
+  theme_void() +
+  scale_color_identity()
+
+dev.off()
+```
+
+
+
+```{r}
+plot.title <- 'network_POU_EC1vsPOU_EC2'
+network <- readRDS(paste0(dir.out, 'network_POU_EC1vsPOU_EC2.rds'))
+# View(network)
+network <- network[network$tf %in% c('BACH1', 
+                                     'TCF7L2', 'NFE2L2', 'ESRRG', 'NR1H4', 'NR5A2',
+                                     'MAF','HNF4G', 'MECOM', 'PPARA', 'CDX2'),]
+# thredhols to show_100_targets
+threshold <- quantile(network$corr, probs = (nrow(network)-100)/nrow(network))
+threshold_labels <- quantile(network$corr, probs = (nrow(network)-500)/nrow(network))
+network<-network[(network$corr > threshold)| (network$target%in%labels & network$corr>threshold_labels), ]
+
+graph <- graph_from_data_frame(network[,1:3], directed = FALSE)
+V(graph)$color <- ifelse(V(graph)$name %in% unique(network$tf), "#d94801", "#6baed6")
+# E(graph)$opacity <- abs(E(graph)$corr) # Assuming correlation is between -1 and 1
+E(graph)$opacity <- 1 # Assuming correlation is between -1 and 1
+
+# layout <- layout_with_graphopt(graph, niter = 500,  mass = 3)
+# layout <- layout_with_fr(graph, niter = 500, area = 10000)
+layout <- layout_nicely(graph)
+
+pdf(paste0(dir.out, plot.title , '.pdf'), width = 7, height = 6)
+
+ggraph(graph, layout = layout) +
+  geom_edge_link(aes(alpha = opacity), edge_colour = "grey", show.legend = FALSE) +
+  geom_node_point(aes(color = color), size = 4) +
+  geom_node_text(aes(label = name), repel = TRUE) +
+  theme_void() +
+  scale_color_identity()
+
+dev.off()
+```
+
+
+```{r}
+plot.title <- 'network_POU_EC2vsPOU_EC1'
+network <- readRDS(paste0(dir.out, 'network_POU_EC2vsPOU_EC1.rds'))
+# View(network)
+network <- network[network$tf %in% c('CDX2', 'KLF3','KLF5', 
+                                     'FOXP2','FOXN3', 'ELF1',
+                                     'ETS2', 'SOX6', 'NFIA',
+                                     'HNF4G'),]
+# thredhols to show_100_targets
+threshold <- quantile(network$corr, probs = (nrow(network)-100)/nrow(network))
+threshold_labels <- quantile(network$corr, probs = (nrow(network)-500)/nrow(network))
+network<-network[(network$corr > threshold)| (network$target%in%labels & network$corr>threshold_labels), ]
+
+graph <- graph_from_data_frame(network[,1:3], directed = FALSE)
+V(graph)$color <- ifelse(V(graph)$name %in% unique(network$tf), "#d94801", "#6baed6")
+# E(graph)$opacity <- abs(E(graph)$corr) # Assuming correlation is between -1 and 1
+E(graph)$opacity <- 1 # Assuming correlation is between -1 and 1
+
+# layout <- layout_with_graphopt(graph, niter = 500,  mass = 3)
+# layout <- layout_with_fr(graph, niter = 500, area = 10000)
+layout <- layout_nicely(graph)
+
+pdf(paste0(dir.out, plot.title , '.pdf'), width = 7, height = 6)
+
+ggraph(graph, layout = layout) +
+  geom_edge_link(aes(alpha = opacity), edge_colour = "grey", show.legend = FALSE) +
+  geom_node_point(aes(color = color), size = 4) +
+  geom_node_text(aes(label = name), repel = TRUE) +
+  theme_void() +
+  scale_color_identity()
+
+dev.off()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

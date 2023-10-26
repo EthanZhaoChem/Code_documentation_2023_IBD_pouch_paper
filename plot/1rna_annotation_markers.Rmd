@@ -1,0 +1,596 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('~/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+out.dir <- '/project/gca/yuzhao1/work/manu/rc2/plots/1rna_annotation_markers/'
+```
+
+
+```{r, include = F, eval=F}
+union <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/gut_filtered.rds')
+epithelial <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/epithelial3.rds')
+immune <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/immune3.rds')
+tcell <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/tcell2.rds')
+bcell <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/bcell3.rds')
+myeloid <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/myeloid3.rds')
+others <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/others3.rds')
+```
+
+###################### 1. Annotation dot plot ########################
+
+### All cells
+
+```{r}
+seurat <- union
+seurat$lineage[seurat$anno1 %in% c('IgA plasma', 'IgG plasma')] <- 'plasma cell'
+seurat$lineage <- factor(seurat$lineage, levels = c("epithelial", "tcell", "bcell", "plasma cell", "myeloid", "others"))
+pdf(paste0(out.dir, 'lineage.pdf'), width = 5, height = 10, pointsize = 1)
+plot_seurat_dot_custom(seurat, group = 'lineage', features = rna.lineage.markers )
+dev.off()
+```
+
+
+
+### Epithelial cells
+
+```{r}
+seurat <- epithelial
+seurat$anno1 <- factor(seurat$anno1,
+                       levels = c("Stem", "TA", "EC1-1", "EC1-2", "EC2-1", "EC2-2", "Goblet1",
+                                  "Goblet2", "M-like", "BEST4", "Paneth", "EEC", "Tuft"))
+pdf(paste0(out.dir, 'epithelial_anno1.pdf'), width = 5, height = 10.5, pointsize = 1)
+plot_seurat_dot_custom(seurat, group = 'anno1', features = rna.epithelial.markers )
+dev.off()
+```
+
+```{r}
+seurat <- epithelial
+seurat$anno2 <- factor(seurat$anno2,
+                       levels = names(custom_colors_rna_epithelial_anno2))
+# seurat$anno2 <- factor(seurat$anno2, levels = custom_colors_rna_epithelial_anno2)
+pdf(paste0(out.dir, 'epithelial_anno2.pdf'), width = 5, height = 10.5, pointsize = 1)
+plot_seurat_dot_custom(seurat, group = 'anno2', features = rna.epithelial.markers )
+dev.off()
+```
+
+### T cells
+
+```{r}
+seurat <- tcell
+seurat$anno1 <- factor(seurat$anno1,
+                       levels = c("CD4 Tcm" , "Treg", "CD103- CD4 Trm", "CD103+ CD4 Trm", 
+                                  "CD103+ CD8 Trm", "KLRG1+ CD8 Trm", "gdT", 
+                                  "MAIT", "NK T", "NK", "ILCs" ))
+pdf(paste0(out.dir, 'tcell_anno1.pdf'), width = 5, height = 10, pointsize = 1)
+plot_seurat_dot_custom(seurat, group = 'anno1', features = rna.tcell.markers )
+dev.off()
+```
+
+### B cells
+
+```{r}
+seurat <- bcell
+seurat$anno1 <- factor(seurat$anno1,
+                       levels = c("GC B", "Naive B", "Memory B", "IgA plasma", "IgG plasma"))
+pdf(paste0(out.dir, 'bcell_anno1.pdf'), width = 5, height = 6, pointsize = 1)
+plot_seurat_dot_custom(seurat, group = 'anno1', features = rna.bcell.markers )
+dev.off()
+```
+
+
+### Myeloid cells
+
+```{r}
+seurat <- myeloid
+seurat$anno1 <- factor(seurat$anno1,
+                       levels = c("Monocyte", "Macrophage", "cDC1", "cDC2", "Lymphoid DC", "Mast", "Neutrophil"))
+pdf(paste0(out.dir, 'myeloid_anno1.pdf'), width = 5, height = 7, pointsize = 1)
+plot_seurat_dot_custom(seurat, group = 'anno1', features = rna.myeloid.markers )
+dev.off()
+```
+
+### others cells
+
+```{r}
+seurat <- others
+seurat$anno1 <- factor(seurat$anno1,
+                       levels = c("Stromal-1", "Stromal-2", "Stromal-3", "Myofibroblast", "Arterial", "Venous", "Pericyte", 
+                                  "Contractile pericyte" , "Smooth muscle", "Lymphatic endothelium" , "Glial" ))
+pdf(paste0(out.dir, 'others_anno1.pdf'), width = 6, height = 10, pointsize = 1)
+plot_seurat_dot_custom(seurat, group = 'anno1', features = rna.others.markers )
+dev.off()
+```
+
+
+################## 2. Feature plot UMAP #####################
+
+### all
+
+```{r}
+# lineage
+genes <- rna.lineage.markers%>%unlist()
+seurat <- union
+plots <- list()
+
+for (feature in genes){
+  # plots[[feature]] <- plot_seurat_feature_custom(seurat, feature_to_plot = feature, reduction_name = 'harmony_umap')
+  plots[[feature]] <- FeaturePlot(seurat, feature, reduction = 'harmony_umap', pt.size = 0.1, max.cutoff = 'q95', raster = F,
+                                  cols = c("#f1f1f1", '#7f0000'))
+}
+
+pdf(paste0(out.dir, 'lineage_feature_umap', '.pdf'), width = 5, height = 5)
+print(plots)
+dev.off()
+```
+
+```{r}
+genes <- rna.lineage.markers%>%unlist()
+seurat <- union
+plots <- list()
+
+for (feature in genes){
+  plots[[feature]] <- FeaturePlot(seurat, feature, reduction = 'harmony_umap', pt.size = 0.1,
+                                  split.by = 'biopsy_location', max.cutoff = 'q95',
+                                  cols = c( "#f1f1f1", '#7f0000'))
+}
+pdf(paste0(out.dir, 'lineage_feature_umap_loc', '.pdf'), width = 20, height = 5)
+print(plots)
+dev.off()
+```
+
+### epithelial
+
+```{r}
+genes <- c(rna.epithelial.markers%>%unlist(), 'CEACAM5')
+seurat <- epithelial
+plots <- list()
+
+for (feature in genes){
+  plots[[feature]] <- FeaturePlot(seurat, feature, reduction = 'harmony_umap', pt.size = 0.1, max.cutoff = 'q95', 
+                                  cols = c("#f1f1f1", '#7f0000'))
+}
+
+pdf(paste0(out.dir, 'epithelial_feature_umap', '.pdf'), width = 5, height = 5)
+print(plots)
+dev.off()
+
+```
+
+```{r}
+genes <- c('CEACAM5', 'FABP6', 'CA2', 'LGR5', 'MKI67', 'OLFM4')
+seurat <- epithelial
+plots <- list()
+
+for (gene in genes){
+  feature <- gene
+  df <- data.frame(epithelial@meta.data)
+  df$embedding1 <- data.frame(epithelial@reductions$harmony_umap@cell.embeddings)$UMAP_1
+  df$embedding2 <- data.frame(epithelial@reductions$harmony_umap@cell.embeddings)$UMAP_2
+  df$feature_to_plot <- FetchData(epithelial, feature) %>% unlist()
+  plots[[feature]] <- plot_df_umap_custom(df, plot_feature = T, feature_name = gene) 
+}
+
+pdf(paste0(out.dir, 'epithelial_feature_umap_extra', '.pdf'), width = 6, height = 7)
+print(plots)
+dev.off()
+
+```
+
+
+```{r}
+genes <- c(rna.epithelial.markers%>%unlist(), 'CEACAM5')
+seurat <- epithelial
+plots <- list()
+
+for (feature in genes){
+  plots[[feature]] <- FeaturePlot(seurat, feature, reduction = 'harmony_umap', pt.size = 0.1,
+                                  split.by = 'biopsy_location', max.cutoff = 'q95',
+                                  cols = c( "#f1f1f1", '#7f0000'))
+}
+pdf(paste0(out.dir, 'epithelial_feature_umap_loc', '.pdf'), width = 20, height = 5)
+print(plots)
+dev.off()
+```
+
+
+### tcell
+
+```{r}
+genes <- c(rna.tcell.markers%>%unlist())
+seurat <- tcell
+plots <- list()
+
+for (feature in genes){
+  plots[[feature]] <- FeaturePlot(seurat, feature, reduction = 'harmony_umap', pt.size = 0.1, max.cutoff = 'q95', 
+                                  cols = c("#f1f1f1", '#7f0000'))
+}
+
+pdf(paste0(out.dir, 'tcell_feature_umap', '.pdf'), width = 5, height = 5)
+print(plots)
+dev.off()
+
+```
+
+
+```{r}
+genes <- c(rna.tcell.markers%>%unlist())
+seurat <- tcell
+plots <- list()
+
+for (feature in genes){
+  plots[[feature]] <- FeaturePlot(seurat, feature, reduction = 'harmony_umap', pt.size = 0.1,
+                                  split.by = 'biopsy_location', max.cutoff = 'q95',
+                                  cols = c( "#f1f1f1", '#7f0000'))
+}
+pdf(paste0(out.dir, 'tcell_feature_umap_loc', '.pdf'), width = 20, height = 5)
+print(plots)
+dev.off()
+```
+
+### bcell 
+
+```{r}
+genes <- c(rna.bcell.markers%>%unlist())
+seurat <- bcell
+plots <- list()
+
+for (feature in genes){
+  plots[[feature]] <- FeaturePlot(seurat, feature, reduction = 'harmony_umap', pt.size = 0.1, max.cutoff = 'q95', 
+                                  cols = c("#f1f1f1", '#7f0000'))
+}
+
+pdf(paste0(out.dir, 'bcell_feature_umap', '.pdf'), width = 5, height = 5)
+print(plots)
+dev.off()
+
+```
+
+
+```{r}
+genes <- c(rna.bcell.markers%>%unlist())
+seurat <- bcell
+plots <- list()
+
+for (feature in genes){
+  plots[[feature]] <- FeaturePlot(seurat, feature, reduction = 'harmony_umap', pt.size = 0.1,
+                                  split.by = 'biopsy_location', max.cutoff = 'q95',
+                                  cols = c( "#f1f1f1", '#7f0000'))
+}
+pdf(paste0(out.dir, 'bcell_feature_umap_loc', '.pdf'), width = 20, height = 5)
+print(plots)
+dev.off()
+```
+
+### myeloid 
+
+```{r}
+genes <- c(rna.myeloid.markers%>%unlist())
+seurat <- myeloid
+plots <- list()
+
+for (feature in genes){
+  plots[[feature]] <- FeaturePlot(seurat, feature, reduction = 'harmony_umap', pt.size = 0.1, max.cutoff = 'q95',
+                                  cols = c("#f1f1f1", '#7f0000'))
+}
+
+pdf(paste0(out.dir, 'myeloid_feature_umap', '.pdf'), width = 5, height = 5)
+print(plots)
+dev.off()
+
+```
+
+
+```{r}
+genes <- c(rna.myeloid.markers%>%unlist())
+seurat <- myeloid
+plots <- list()
+
+for (feature in genes){
+  plots[[feature]] <- FeaturePlot(seurat, feature, reduction = 'harmony_umap', pt.size = 0.1,
+                                  split.by = 'biopsy_location', max.cutoff = 'q95',
+                                  cols = c( "#f1f1f1", '#7f0000'))
+}
+pdf(paste0(out.dir, 'myeloid_feature_umap_loc', '.pdf'), width = 20, height = 5)
+print(plots)
+dev.off()
+```
+
+### others
+
+```{r}
+genes <- c(rna.others.markers%>%unlist())
+seurat <- others
+plots <- list()
+
+for (feature in genes){
+  plots[[feature]] <- FeaturePlot(seurat, feature, reduction = 'harmony_umap', pt.size = 0.1, max.cutoff = 'q95',
+                                  cols = c("#f1f1f1", '#7f0000'))
+}
+
+pdf(paste0(out.dir, 'others_feature_umap', '.pdf'), width = 5, height = 5)
+print(plots)
+dev.off()
+
+```
+
+
+```{r}
+genes <- c(rna.others.markers%>%unlist())
+seurat <- others
+plots <- list()
+
+for (feature in genes){
+  plots[[feature]] <- FeaturePlot(seurat, feature, reduction = 'harmony_umap', pt.size = 0.1,
+                                  split.by = 'biopsy_location', max.cutoff = 'q95',
+                                  cols = c( "#f1f1f1", '#7f0000'))
+}
+pdf(paste0(out.dir, 'others_feature_umap_loc', '.pdf'), width = 20, height = 5)
+print(plots)
+dev.off()
+```
+
+################## 2. Feature plot Vln #####################
+
+### all cells
+
+```{r}
+seurat <- union
+seurat$lineage[seurat$anno1 %in% c('IgA plasma', 'IgG plasma')] <- 'plasma cell'
+seurat$lineage <- factor(seurat$lineage, levels = c("epithelial", "tcell", "bcell", "plasma cell", "myeloid", "others"))
+```
+
+```{r}
+genes <- rna.lineage.markers%>%unlist()
+addinfo <- FetchData(seurat, genes)
+df <- bind_cols(seurat@meta.data, addinfo)
+palette <- custom_colors_rna_lineage
+plots <- list()
+
+for (feature in genes){
+  plots[[feature]] <- 
+    ggviolin(df, x = 'lineage', y = feature, fill = 'lineage', 
+             palette = palette, scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=15),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=20),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=20, hjust=0.5, face = 'bold'))+
+      labs(title = '')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+}
+
+pdf(paste0(out.dir, 'lineage_feature_vln', '.pdf'), width = 5, height = 5)
+print(plots)
+dev.off()
+
+```
+
+
+
+### epithelial
+
+```{r}
+seurat <- epithelial
+seurat$anno1 <- factor(seurat$anno1,
+                       levels = c("Stem", "TA", "EC1-1", "EC1-2", "EC2-1", "EC2-2", "Goblet1",
+                                  "Goblet2", "M-like", "BEST4", "Paneth", "EEC", "Tuft"))
+```
+
+```{r}
+genes <- rna.epithelial.markers%>%unlist()
+addinfo <- FetchData(seurat, genes)
+df <- bind_cols(seurat@meta.data, addinfo)
+palette <- custom_colors_rna_epithelial
+plots <- list()
+
+for (feature in genes){
+  plots[[feature]] <- 
+    ggviolin(df, x = 'anno1', y = feature, fill = 'anno1', 
+             palette = palette, scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=15),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=20),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=20, hjust=0.5, face = 'bold'))+
+      labs(title = '')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+}
+
+pdf(paste0(out.dir, 'epithelial_feature_vln', '.pdf'), width = 7, height = 5)
+print(plots)
+dev.off()
+
+```
+
+
+
+### tcell
+
+```{r}
+seurat <- tcell
+seurat$anno1 <- factor(seurat$anno1,
+                       levels = c("CD4 Tcm" , "Treg", "CD103- CD4 Trm", "CD103+ CD4 Trm", 
+                                  "CD103+ CD8 Trm", "KLRG1+ CD8 Trm", "gdT", 
+                                  "MAIT", "NK T", "NK", "ILCs" ))
+```
+
+```{r}
+genes <- rna.tcell.markers%>%unlist()
+addinfo <- FetchData(seurat, genes)
+df <- bind_cols(seurat@meta.data, addinfo)
+palette <- custom_colors_rna_tcell
+plots <- list()
+
+for (feature in genes){
+  plots[[feature]] <- 
+    ggviolin(df, x = 'anno1', y = feature, fill = 'anno1', palette = palette,
+              scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=15),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=20),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=20, hjust=0.5, face = 'bold'))+
+      labs(title = '')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+}
+
+pdf(paste0(out.dir, 'tcell_feature_vln', '.pdf'), width = 6, height = 5)
+print(plots)
+dev.off()
+
+```
+
+
+
+### bcell
+
+```{r}
+seurat <- bcell
+seurat$anno1 <- factor(seurat$anno1,
+                       levels = c("GC B", "Naive B", "Memory B", "IgA plasma", "IgG plasma"))
+```
+
+```{r}
+genes <- rna.bcell.markers%>%unlist()
+addinfo <- FetchData(seurat, genes)
+df <- bind_cols(seurat@meta.data, addinfo)
+palette <- custom_colors_rna_bcell
+plots <- list()
+
+for (feature in genes){
+  plots[[feature]] <- 
+    ggviolin(df, x = 'anno1', y = feature, fill = 'anno1', palette = palette,
+              scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=15),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=20),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=20, hjust=0.5, face = 'bold'))+
+      labs(title = '')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+}
+
+pdf(paste0(out.dir, 'bcell_feature_vln', '.pdf'), width = 6, height = 5)
+print(plots)
+dev.off()
+
+```
+
+
+
+### myeloid
+
+```{r}
+seurat <- myeloid
+seurat$anno1 <- factor(seurat$anno1,
+                       levels = c("Monocyte", "Macrophage", "cDC1", "cDC2", "Lymphoid DC", "Mast", "Neutrophil"))
+```
+
+```{r}
+genes <- rna.myeloid.markers%>%unlist()
+addinfo <- FetchData(seurat, genes)
+df <- bind_cols(seurat@meta.data, addinfo)
+palette <- custom_colors_rna_myeloid
+plots <- list()
+
+for (feature in genes){
+  plots[[feature]] <- 
+    ggviolin(df, x = 'anno1', y = feature, fill = 'anno1', palette = palette,
+              scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=15),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=20),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=20, hjust=0.5, face = 'bold'))+
+      labs(title = '')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+}
+
+pdf(paste0(out.dir, 'myeloid_feature_vln', '.pdf'), width = 5, height = 5)
+print(plots)
+dev.off()
+
+```
+
+
+
+### others
+
+```{r}
+seurat <- others
+seurat$anno1 <- factor(seurat$anno1,
+                       levels = c("Stromal-1", "Stromal-2", "Stromal-3", "Myofibroblast", "Arterial", "Venous", "Pericyte", 
+                                  "Contractile pericyte" , "Smooth muscle", "Lymphatic endothelium" , "Glial" ))
+```
+
+```{r}
+genes <- rna.others.markers%>%unlist()
+addinfo <- FetchData(seurat, genes)
+df <- bind_cols(seurat@meta.data, addinfo)
+palette <- custom_colors_rna_others
+plots <- list()
+
+for (feature in genes){
+  plots[[feature]] <- 
+    ggviolin(df, x = 'anno1', y = feature, fill = 'anno1', palette = palette,
+              scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=15),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=20),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=20, hjust=0.5, face = 'bold'))+
+      labs(title = '')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+}
+
+pdf(paste0(out.dir, 'others_feature_vln', '.pdf'), width = 6, height = 5)
+print(plots)
+dev.off()
+
+```

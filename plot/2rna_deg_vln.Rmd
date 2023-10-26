@@ -1,0 +1,1068 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(limma)
+library(edgeR)
+library(variancePartition)
+library(BiocParallel)
+library(tidyverse)
+library(ComplexHeatmap)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_deg_markers.R')
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+source('/project/gca/yuzhao1/scripts/seurat/deg_pseudobulk.R')
+```
+
+```{r, include = F, eval=F}
+union <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/gut_filtered.rds')
+```
+
+
+### 1. EC
+
+```{r}
+# features <- rna_deg_markers_ec_ileum
+# plot.title <- 'ec_ileum'
+features <- rna_deg_markers_ec_colon
+plot.title <- 'ec_colon'
+# features <- rna_deg_markers_ec_tfs
+# plot.title <- 'ec_tfs'
+
+out.dir <- '/project/gca/yuzhao1/work/manu/rc2/plots/2rna_deg/EC_vln/'
+```
+
+```{r}
+seurat <- subset(union, cells = Cells(union)[union$anno1 %in% c('EC1-1', 'EC1-2', "EC2-1", "EC2-2")])
+seurat$anno1 <- seurat$anno1_loc
+seurat$anno1 <- factor(seurat$anno1, levels = c('EC-AC', 'EC-POU2', 'EC-POU1', 'EC-PP', 'EC-TI'))
+```
+
+```{r}
+# plot all single violins in EC groups
+plot.title <- 'MHC_genes'
+genes.mhc <-grep('HLA-', rownames(union), value = T) %>% as.character()
+features <- genes.mhc
+addinfo <- FetchData(seurat, features)
+df <- bind_cols(seurat@meta.data, addinfo)
+
+palette <- custom_colors_location
+plots <- list()
+
+for (feature in features){
+  plots[[feature]] <- 
+    ggviolin(df, x = 'anno1', y = feature, fill = 'biopsy_location', 
+             palette = palette, scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=15),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=20),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=20, hjust=0.5, face = 'bold'))+
+      labs(title = '')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+}
+
+pdf(paste0(out.dir, plot.title, '.pdf'), width = 7, height = 5)
+print(plots)
+dev.off()
+```
+
+```{r}
+# plot all single violins in union cells
+seurat <- union
+plot.title <- 'MHC_genes_union'
+genes.mhc <-grep('HLA-', rownames(union), value = T) %>% as.character()
+features <- genes.mhc
+addinfo <- FetchData(seurat, features)
+df <- bind_cols(seurat@meta.data, addinfo)
+
+palette <- custom_colors_location
+plots <- list()
+
+for (feature in features){
+  plots[[feature]] <- 
+    ggviolin(df, x = 'anno1', y = feature, fill = 'biopsy_location', 
+             palette = palette, scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=15),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=20),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=20, hjust=0.5, face = 'bold'))+
+      labs(title = '')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+}
+
+pdf(paste0(out.dir, plot.title, '.pdf'), width = 26, height = 5)
+print(plots)
+dev.off()
+```
+
+```{r}
+# single gene with significance test
+features <- c('IFNG')
+addinfo <- FetchData(seurat, features)
+df <- bind_cols(seurat@meta.data, addinfo)
+palette <- custom_colors_location
+
+feature <- 'IFNG'
+my_comparisons <- list(c('EC-POU2', 'EC-POU1'), c('EC-AC', 'EC-POU1'))
+df$feature_to_plot <- df[[feature]]
+p <- ggviolin(df, x = 'anno1', y = 'feature_to_plot', fill = 'biopsy_location', 
+         palette = palette, scale = 'width', width=0.8, 
+         trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+  stat_compare_means(feature_to_plot ~ anno1, 
+                       comparisons = my_comparisons,
+                       # label.y = c(0.18, 0.20),
+                       label = "p.signif",                    
+                       method = "wilcox.test",
+                       paired = F)+
+  labs( x = NULL) +
+  theme_pubr()+
+  theme(axis.text.y = element_text(size=15),
+  	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+  	  axis.title = element_text(size=15),
+  	  legend.title = element_blank(),
+  	  legend.text = element_text(size=10),
+  	  legend.position = "bottom",
+  	  plot.title = element_text(size=20, hjust=0.5, face = 'bold'))+
+  labs(title = feature, y = 'Normalized expression')+
+  guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+
+pdf(paste0(out.dir, feature, '.pdf'), width = 5, height = 5)
+print(p)
+dev.off()
+```
+
+```{r}
+# single gene with significance test
+feature<- c('IFNG')
+addinfo <- FetchData(seurat, features)
+df <- bind_cols(seurat@meta.data, addinfo)
+palette <- custom_colors_location
+
+df$feature_to_plot <- df[[feature]]
+p <- ggviolin(df, x = 'anno1', y = 'feature_to_plot', fill = 'biopsy_location', 
+         palette = palette, scale = 'width', width=0.8, 
+         trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+  labs( x = NULL) +
+  theme_pubr()+
+  theme(axis.text.y = element_text(size=15),
+  	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+  	  axis.title = element_text(size=15),
+  	  legend.title = element_blank(),
+  	  legend.text = element_text(size=10),
+  	  legend.position = "bottom",
+  	  plot.title = element_text(size=20, hjust=0.5, face = 'bold'))+
+  labs(title = feature, y = 'Normalized expression')+
+  guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+
+pdf(paste0(out.dir, feature, '.pdf'), width = 5, height = 5)
+print(p)
+dev.off()
+```
+
+```{r}
+# check distribution of single gene
+# epithelial <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/epithelial3.rds')
+df <- data.frame(epithelial@meta.data)
+df$embedding1 <- data.frame(epithelial@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(epithelial@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$feature_to_plot <- FetchData(epithelial, feature) %>% unlist()
+plot_df_umap_custom(df, plot_feature = T, feature_name = feature) 
+```
+
+
+
+```{r}
+# single gene violin in union cells
+seurat <- epithelial
+feature<- c('GUCA2B')
+addinfo <- FetchData(seurat, feature)
+df <- bind_cols(seurat@meta.data, addinfo)
+palette <- custom_colors_location
+
+df$feature_to_plot <- df[[feature]]
+p <- ggviolin(df, x = 'anno1', y = 'feature_to_plot', fill = 'biopsy_location', 
+         palette = palette, scale = 'width', width=0.8, 
+         trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+  labs( x = NULL) +
+  theme_pubr()+
+  theme(axis.text.y = element_text(size=15),
+  	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+  	  axis.title = element_text(size=15),
+  	  legend.title = element_blank(),
+  	  legend.text = element_text(size=10),
+  	  legend.position = "bottom",
+  	  plot.title = element_text(size=20, hjust=0.5, face = 'bold'))+
+  labs(title = feature, y = 'Normalized expression')+
+  guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+p
+pdf(paste0(out.dir, feature, 'union_.pdf'), width = 20, height = 5)
+print(p)
+dev.off()
+```
+
+### 2. Stem
+
+```{r}
+features_all <- readRDS('~/yuzhao1/work/final_RC2rna/deg/epithelial/stem/DEGs-Stem_selected.rds')
+
+## 1. non-TF genes
+# features <- features_all %>% unlist() %>% unique() %>% setdiff(., features_all$tfs)
+features <- rna_deg_markers_stem_nonTFs
+GroupTested <- 'Stem'
+plot.title <- 'Stem_nonTFs'
+
+## 2. TFs
+# features <- rna_deg_markers_stem_tfs
+# GroupTested <- 'Stem'
+# plot.title <- 'Stem_tfs'
+
+out.dir <- '/project/gca/yuzhao1/work/manu/rc2/plots/2rna_deg/stem/'
+```
+
+```{r}
+seurat <- subset(union, cells = Cells(union)[union$anno1 %in% c(GroupTested)])
+seurat$anno1 <- paste0(seurat$anno1, '-', seurat$biopsy_location)
+seurat$anno1 <- factor(seurat$anno1, levels = paste0(GroupTested, '-', c('AC', 'POU', 'PP', 'TI')))
+```
+
+```{r}
+addinfo <- FetchData(seurat, features)
+df <- bind_cols(seurat@meta.data, addinfo)
+
+palette <- custom_colors_location
+plots <- list()
+
+for (feature in features){
+  plots[[feature]] <- 
+    ggviolin(df, x = 'anno1', y = feature, fill = 'biopsy_location', 
+             palette = palette, scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=15),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=20),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=20, hjust=0.5, face = 'bold'))+
+      labs(title = '')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+}
+
+pdf(paste0(out.dir, plot.title, '_vln.pdf'), width = 7, height = 5)
+print(plots)
+dev.off()
+```
+
+
+### 2. Stem2
+
+```{r}
+# ## 1. non-TF genes
+# features <- rna_deg_markers_stem_nonTFs
+# GroupTested <- 'Stem'
+# plot.title <- 'Stem_nonTFs'
+
+# 2. TFs
+features <- rna_deg_markers_stem_tfs
+GroupTested <- 'Stem'
+plot.title <- 'Stem_tfs'
+
+out.dir <- '/project/gca/yuzhao1/work/manu/rc2/plots/2rna_deg/stem2/'
+
+```
+
+```{r}
+seurat <- subset(union, cells = Cells(union)[union$anno1 %in% c('Stem')])
+seurat$anno1 <- seurat$anno1_loc
+seurat$anno1 <- factor(seurat$anno1, levels = c('Stem-AC', 'Stem-POU2', 'Stem-POU1', 'Stem-PP', 'Stem-TI'))
+```
+
+```{r}
+addinfo <- FetchData(seurat, features)
+df <- bind_cols(seurat@meta.data, addinfo)
+
+palette <- custom_colors_location
+plots <- list()
+
+for (feature in features){
+  plots[[feature]] <- 
+    ggviolin(df, x = 'anno1', y = feature, fill = 'biopsy_location', 
+             palette = palette, scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=15),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=20),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=20, hjust=0.5, face = 'bold'))+
+      labs(title = '')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+}
+
+pdf(paste0(out.dir, plot.title, '.pdf'), width = 7, height = 5)
+print(plots)
+dev.off()
+```
+
+### 3. Tcell
+
+```{r}
+features_all <- readRDS('~/yuzhao1/work/final_RC2rna/deg/tcell/Tcell_nonNK_nonILC/DEGs-tcell_selected.rds')
+# ## 1. non-TF genes
+# features <- features_all %>% unlist() %>% unique() %>% setdiff(., features_all$tfs)
+# # features <- rna_deg_markers_stem_nonTFs
+# GroupTested <- 'tcell'
+# plot.title <- 'tcell'
+
+# 2. TFs
+features <- features_all$tfs
+# features <- rna_deg_markers_stem_tfs
+GroupTested <- 'tcell'
+plot.title <- 'tcell_tfs'
+
+out.dir <- '/project/gca/yuzhao1/work/manu/rc2/plots/2rna_deg/tcell/'
+```
+
+```{r}
+tcell <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/tcell2.rds')
+seurat <- subset(tcell, anno1 != 'NK' & anno1 != 'ILCs')
+seurat$anno1 <- 'tcell'
+seurat$anno1 <- paste0(seurat$anno1, '-', seurat$biopsy_location)
+seurat$anno1 <- factor(seurat$anno1, levels = paste0(GroupTested, '-', c('AC', 'POU', 'PP', 'TI')))
+```
+
+```{r}
+addinfo <- FetchData(seurat, features)
+df <- bind_cols(seurat@meta.data, addinfo)
+
+palette <- custom_colors_location
+plots <- list()
+
+for (feature in features){
+  plots[[feature]] <- 
+    ggviolin(df, x = 'anno1', y = feature, fill = 'biopsy_location', 
+             palette = palette, scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=15),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=20),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=20, hjust=0.5, face = 'bold'))+
+      labs(title = '')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+}
+
+pdf(paste0(out.dir, plot.title, '_vln.pdf'), width = 7, height = 5)
+print(plots)
+dev.off()
+```
+
+### 3.1 CD4 Tcell
+
+```{r}
+features_all <- readRDS('~/yuzhao1/work/final_RC2rna/deg/tcell/CD4T/DEGs-CD4T_selected.rds')
+## 1. non-TF genes
+features <- features_all %>% unlist() %>% unique() %>% setdiff(., features_all$tfs)
+GroupTested <- 'CD4T'
+plot.title <- 'CD4T.nonTF'
+
+# # 2. TFs
+# features <- features_all$tfs
+# GroupTested <- 'CD4T'
+# plot.title <- 'CD4T.tf'
+
+out.dir <- '/project/gca/yuzhao1/work/manu/rc2/plots/2rna_deg/cd4/'
+```
+
+```{r}
+tcell <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/tcell2.rds')
+seurat <- subset(tcell, tcell$anno1 %in% c("CD103+ CD4 Trm", "CD103- CD4 Trm", "CD4 Tcm", "Treg"))
+seurat$anno1 <- seurat$anno1_loc
+seurat$anno1 <- factor(seurat$anno1, levels = paste0(GroupTested, '-', c('AC', 'POU', 'PP', 'TI')))
+```
+
+```{r}
+addinfo <- FetchData(seurat, features)
+df <- bind_cols(seurat@meta.data, addinfo)
+
+palette <- custom_colors_location
+plots <- list()
+
+for (feature in features){
+  plots[[feature]] <- 
+    ggviolin(df, x = 'anno1', y = feature, fill = 'biopsy_location', 
+             palette = palette, scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=15),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=20),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=20, hjust=0.5, face = 'bold'))+
+      labs(title = '')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+}
+
+pdf(paste0(out.dir, plot.title, '_vln.pdf'), width = 7, height = 5)
+print(plots)
+dev.off()
+```
+
+
+### 3.2 CD8 Tcell
+
+```{r}
+features_all <- readRDS('~/yuzhao1/work/final_RC2rna/deg/tcell/CD8T/DEGs-CD8T_selected.rds')
+# ## 1. non-TF genes
+# features <- features_all %>% unlist() %>% unique() %>% setdiff(., features_all$tfs)
+# GroupTested <- 'CD8T'
+# plot.title <- 'CD8T.nonTF'
+
+# 2. TFs
+features <- features_all$tfs
+GroupTested <- 'CD8T'
+plot.title <- 'CD8T.tf'
+
+out.dir <- '/project/gca/yuzhao1/work/manu/rc2/plots/2rna_deg/cd8/'
+```
+
+```{r}
+tcell <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/tcell2.rds')
+seurat <- subset(tcell,cells= Cells(tcell)[tcell$anno1 %in% c("KLRG1+ CD8 Trm", "CD103+ CD8 Trm")])
+seurat$anno1 <- seurat$anno1_loc
+seurat$anno1 <- factor(seurat$anno1, levels = paste0(GroupTested, '-', c('AC', 'POU', 'PP', 'TI')))
+```
+
+```{r}
+addinfo <- FetchData(seurat, features)
+df <- bind_cols(seurat@meta.data, addinfo)
+
+palette <- custom_colors_location
+plots <- list()
+
+for (feature in features){
+  plots[[feature]] <- 
+    ggviolin(df, x = 'anno1', y = feature, fill = 'biopsy_location', 
+             palette = palette, scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=15),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=20),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=20, hjust=0.5, face = 'bold'))+
+      labs(title = '')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+}
+
+pdf(paste0(out.dir, plot.title, '_vln.pdf'), width = 7, height = 5)
+print(plots)
+dev.off()
+```
+
+
+
+### 3.3 gd Tcell
+
+```{r}
+features_all <- readRDS('~/yuzhao1/work/final_RC2rna/deg/tcell/gdT/DEGs-gdT_selected.rds')
+## 1. non-TF genes
+features <- features_all %>% unlist() %>% unique() %>% setdiff(., features_all$tfs)
+GroupTested <- 'gdT'
+plot.title <- 'gdT.nonTF'
+
+# # 2. TFs
+# features <- features_all$tfs
+# GroupTested <- 'gdT'
+# plot.title <- 'gdT.tf'
+
+out.dir <- '/project/gca/yuzhao1/work/manu/rc2/plots/2rna_deg/gdT/'
+```
+
+```{r}
+tcell <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/tcell2.rds')
+seurat <- subset(tcell,cells= Cells(tcell)[tcell$anno1 %in% c("gdT")])
+seurat$anno1 <- seurat$anno1_loc
+seurat$anno1 <- factor(seurat$anno1, levels = paste0(GroupTested, '-', c('AC', 'POU', 'PP', 'TI')))
+```
+
+```{r}
+addinfo <- FetchData(seurat, features)
+df <- bind_cols(seurat@meta.data, addinfo)
+
+palette <- custom_colors_location
+plots <- list()
+
+for (feature in features){
+  plots[[feature]] <- 
+    ggviolin(df, x = 'anno1', y = feature, fill = 'biopsy_location', 
+             palette = palette, scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=15),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=20),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=20, hjust=0.5, face = 'bold'))+
+      labs(title = '')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+}
+
+pdf(paste0(out.dir, plot.title, '_vln.pdf'), width = 7, height = 5)
+print(plots)
+dev.off()
+```
+
+
+### 4. goblet
+
+```{r}
+features_all <- readRDS('~/yuzhao1/work/final_RC2rna/deg/epithelial/goblet/DEGs-Goblet_selected.rds')
+## 1. non-TF genes
+features <- features_all %>% unlist() %>% unique() %>% setdiff(., features_all$tfs)
+GroupTested <- 'Goblet'
+plot.title <- 'Goblet'
+
+# # 2. TFs
+# features <- features_all$tfs
+# GroupTested <- 'Goblet'
+# plot.title <- 'Goblet_tfs'
+
+out.dir <- '/project/gca/yuzhao1/work/manu/rc2/plots/2rna_deg/goblet/'
+```
+
+```{r}
+union$anno1[union$anno1 %in% c('Goblet1', 'Goblet2')] <- 'Goblet' 
+seurat <- subset(union, anno1 == GroupTested)
+seurat$anno1 <- paste0(seurat$anno1, '-', seurat$biopsy_location)
+seurat$anno1 <- factor(seurat$anno1, levels = paste0(GroupTested, '-', c('AC', 'POU', 'PP', 'TI')))
+```
+
+```{r}
+addinfo <- FetchData(seurat, features)
+df <- bind_cols(seurat@meta.data, addinfo)
+
+palette <- custom_colors_location
+plots <- list()
+
+for (feature in features){
+  plots[[feature]] <- 
+    ggviolin(df, x = 'anno1', y = feature, fill = 'biopsy_location', 
+             palette = palette, scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=15),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=20),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=20, hjust=0.5, face = 'bold'))+
+      labs(title = '')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+}
+
+pdf(paste0(out.dir, plot.title, '_vln.pdf'), width = 7, height = 5)
+print(plots)
+dev.off()
+```
+
+
+
+### 5. plasma
+
+```{r}
+features_all <- readRDS('~/yuzhao1/work/final_RC2rna/deg/bcell/plasma/DEGs-plasma_selected.rds')
+# ## 1. non-TF genes
+# features <- features_all %>% unlist() %>% unique() %>% setdiff(., features_all$tfs)
+# GroupTested <- 'plasma'
+# plot.title <- 'plasma'
+
+# 2. TFs
+features <- features_all$tfs
+GroupTested <- 'plasma'
+plot.title <- 'plasma_tfs'
+
+out.dir <- '/project/gca/yuzhao1/work/manu/rc2/plots/2rna_deg/plasma/'
+```
+
+```{r}
+union$anno1[union$anno1 %in% c("IgA plasma", "IgG plasma")] <- 'plasma' 
+seurat <- subset(union, anno1 == GroupTested)
+seurat$anno1 <- paste0(seurat$anno1, '-', seurat$biopsy_location)
+seurat$anno1 <- factor(seurat$anno1, levels = paste0(GroupTested, '-', c('AC', 'POU', 'PP', 'TI')))
+```
+
+```{r}
+addinfo <- FetchData(seurat, features)
+df <- bind_cols(seurat@meta.data, addinfo)
+
+palette <- custom_colors_location
+plots <- list()
+
+for (feature in features){
+  plots[[feature]] <- 
+    ggviolin(df, x = 'anno1', y = feature, fill = 'biopsy_location', 
+             palette = palette, scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=15),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=20),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=20, hjust=0.5, face = 'bold'))+
+      labs(title = '')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+}
+
+pdf(paste0(out.dir, plot.title, '_vln.pdf'), width = 7, height = 5)
+print(plots)
+dev.off()
+```
+
+
+
+### 6. TA
+
+```{r}
+features_all <- readRDS('~/yuzhao1/work/final_RC2rna/deg/epithelial/TA/DEGs-TA_selected.rds')
+## 1. non-TF genes
+features <- features_all %>% unlist() %>% unique() %>% setdiff(., features_all$tfs)
+GroupTested <- 'TA'
+plot.title <- 'TA'
+
+# # 2. TFs
+# features <- features_all$tfs
+# GroupTested <- 'TA'
+# plot.title <- 'TA_tfs'
+
+out.dir <- '/project/gca/yuzhao1/work/manu/rc2/plots/2rna_deg/TA/'
+```
+
+```{r}
+# union$anno1[union$anno1 %in% c("IgA plasma", "IgG plasma")] <- 'plasma' 
+seurat <- subset(union, anno1 == GroupTested)
+seurat$anno1 <- paste0(seurat$anno1, '-', seurat$biopsy_location)
+seurat$anno1 <- factor(seurat$anno1, levels = paste0(GroupTested, '-', c('AC', 'POU', 'PP', 'TI')))
+```
+
+```{r}
+addinfo <- FetchData(seurat, features)
+df <- bind_cols(seurat@meta.data, addinfo)
+
+palette <- custom_colors_location
+plots <- list()
+
+for (feature in features){
+  plots[[feature]] <- 
+    ggviolin(df, x = 'anno1', y = feature, fill = 'biopsy_location', 
+             palette = palette, scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=15),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=20),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=20, hjust=0.5, face = 'bold'))+
+      labs(title = '')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+}
+
+pdf(paste0(out.dir, plot.title, '_vln.pdf'), width = 7, height = 5)
+print(plots)
+dev.off()
+```
+
+
+
+### 7. BEST4
+
+```{r}
+features_all <- readRDS('~/yuzhao1/work/final_RC2rna/deg/epithelial/BEST4/DEGs-BEST4_selected.rds')
+# ## 1. non-TF genes
+# features <- features_all %>% unlist() %>% unique() %>% setdiff(., features_all$tfs)
+# GroupTested <- 'BEST4'
+# plot.title <- 'BEST4'
+
+# 2. TFs
+features <- features_all$tfs
+GroupTested <- 'BEST4'
+plot.title <- 'BEST4_tfs'
+
+out.dir <- '/project/gca/yuzhao1/work/manu/rc2/plots/2rna_deg/BEST4/'
+```
+
+```{r}
+# union$anno1[union$anno1 %in% c("IgA plasma", "IgG plasma")] <- 'plasma' 
+seurat <- subset(union, anno1 == GroupTested)
+seurat$anno1 <- paste0(seurat$anno1, '-', seurat$biopsy_location)
+seurat$anno1 <- factor(seurat$anno1, levels = paste0(GroupTested, '-', c('AC', 'POU', 'PP', 'TI')))
+```
+
+```{r}
+addinfo <- FetchData(seurat, features)
+df <- bind_cols(seurat@meta.data, addinfo)
+
+palette <- custom_colors_location
+plots <- list()
+
+for (feature in features){
+  plots[[feature]] <- 
+    ggviolin(df, x = 'anno1', y = feature, fill = 'biopsy_location', 
+             palette = palette, scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=15),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=20),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=20, hjust=0.5, face = 'bold'))+
+      labs(title = '')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+}
+
+pdf(paste0(out.dir, plot.title, '_vln.pdf'), width = 7, height = 5)
+print(plots)
+dev.off()
+```
+
+
+
+### 8. Tuft
+
+```{r}
+features_all <- readRDS('~/yuzhao1/work/final_RC2rna/deg/epithelial/tuft/DEGs-Tuft_selected.rds')
+## 1. non-TF genes
+features <- features_all %>% unlist() %>% unique() %>% setdiff(., features_all$tfs)
+GroupTested <- 'Tuft'
+plot.title <- 'Tuft'
+
+# # 2. TFs
+# features <- features_all$tfs
+# GroupTested <- 'Tuft'
+# plot.title <- 'Tuft_tfs'
+
+out.dir <- '/project/gca/yuzhao1/work/manu/rc2/plots/2rna_deg/Tuft/'
+```
+
+```{r}
+# union$anno1[union$anno1 %in% c("IgA plasma", "IgG plasma")] <- 'plasma' 
+seurat <- subset(union, anno1 == GroupTested)
+seurat$anno1 <- paste0(seurat$anno1, '-', seurat$biopsy_location)
+seurat$anno1 <- factor(seurat$anno1, levels = paste0(GroupTested, '-', c('AC', 'POU', 'PP', 'TI')))
+```
+
+```{r}
+addinfo <- FetchData(seurat, features)
+df <- bind_cols(seurat@meta.data, addinfo)
+
+palette <- custom_colors_location
+plots <- list()
+
+for (feature in features){
+  plots[[feature]] <- 
+    ggviolin(df, x = 'anno1', y = feature, fill = 'biopsy_location', 
+             palette = palette, scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=15),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=20),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=20, hjust=0.5, face = 'bold'))+
+      labs(title = '')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+}
+
+pdf(paste0(out.dir, plot.title, '_vln.pdf'), width = 7, height = 5)
+print(plots)
+dev.off()
+```
+
+
+
+
+### 9. EEC
+
+```{r}
+features_all <- readRDS('~/yuzhao1/work/final_RC2rna/deg/epithelial/EEC/DEGs-EEC_selected.rds')
+# ## 1. non-TF genes
+# features <- features_all %>% unlist() %>% unique() %>% setdiff(., features_all$tfs)
+# GroupTested <- 'EEC'
+# plot.title <- 'EEC'
+
+# 2. TFs
+features <- features_all$tfs
+GroupTested <- 'EEC'
+plot.title <- 'EEC_tfs'
+
+out.dir <- '/project/gca/yuzhao1/work/manu/rc2/plots/2rna_deg/EEC/'
+```
+
+```{r}
+# union$anno1[union$anno1 %in% c("IgA plasma", "IgG plasma")] <- 'plasma' 
+seurat <- subset(union, anno1 == GroupTested)
+seurat$anno1 <- paste0(seurat$anno1, '-', seurat$biopsy_location)
+seurat$anno1 <- factor(seurat$anno1, levels = paste0(GroupTested, '-', c('AC', 'POU', 'PP', 'TI')))
+```
+
+```{r}
+addinfo <- FetchData(seurat, features)
+df <- bind_cols(seurat@meta.data, addinfo)
+
+palette <- custom_colors_location
+plots <- list()
+
+for (feature in features){
+  plots[[feature]] <- 
+    ggviolin(df, x = 'anno1', y = feature, fill = 'biopsy_location', 
+             palette = palette, scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=15),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=20),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=20, hjust=0.5, face = 'bold'))+
+      labs(title = '')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+}
+
+pdf(paste0(out.dir, plot.title, '_vln.pdf'), width = 7, height = 5)
+print(plots)
+dev.off()
+```
+
+
+
+
+
+
+### 10. Bcell non plasma
+
+```{r}
+features_all <- readRDS('~/yuzhao1/work/final_RC2rna/deg/bcell/nonPlasmaB/DEGs-bcell_selected.rds')
+## 1. non-TF genes
+features <- features_all %>% unlist() %>% unique() %>% setdiff(., features_all$tfs)
+GroupTested <- 'bcell'
+plot.title <- 'bcell'
+
+# # 2. TFs
+# features <- features_all$tfs
+# GroupTested <- 'bcell'
+# plot.title <- 'bcell_tfs'
+
+out.dir <- '/project/gca/yuzhao1/work/manu/rc2/plots/2rna_deg/BcellNonPlasma/'
+```
+
+```{r}
+seurat <- subset(union, cells= Cells(union)[union$anno1 %in% c("Naive B", "GC B", "Memory B")])
+seurat$anno1 <- 'bcell'
+groupToTest <- 'bcell'
+seurat$anno1 <- paste0(seurat$anno1, '-', seurat$biopsy_location)
+seurat$anno1 <- factor(seurat$anno1, levels = paste0(GroupTested, '-', c('AC', 'POU', 'PP', 'TI')))
+```
+
+```{r}
+addinfo <- FetchData(seurat, features)
+df <- bind_cols(seurat@meta.data, addinfo)
+
+palette <- custom_colors_location
+plots <- list()
+
+for (feature in features){
+  plots[[feature]] <- 
+    ggviolin(df, x = 'anno1', y = feature, fill = 'biopsy_location', 
+             palette = palette, scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=15),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=20),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=20, hjust=0.5, face = 'bold'))+
+      labs(title = '')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+}
+
+pdf(paste0(out.dir, plot.title, '_vln.pdf'), width = 7, height = 5)
+print(plots)
+dev.off()
+```
+
+
+
+### 11. stromal
+
+```{r}
+features_all <- readRDS('~/yuzhao1/work/final_RC2rna/deg/others/stromal/DEGs-stromal_selected.rds')
+# ## 1. non-TF genes
+# features <- features_all %>% unlist() %>% unique() %>% setdiff(., features_all$tfs)
+# GroupTested <- 'stromal'
+# plot.title <- 'stromal'
+
+# 2. TFs
+features <- features_all$tfs
+GroupTested <- 'stromal'
+plot.title <- 'stromal_tfs'
+
+out.dir <- '/project/gca/yuzhao1/work/manu/rc2/plots/2rna_deg/stromal/'
+```
+
+```{r}
+seurat <- subset(union, cells= Cells(union)[union$anno1 %in% c("Stromal-1","Stromal-2","Stromal-3")])
+seurat$anno1 <- 'stromal'
+groupToTest <- 'stromal'
+seurat$anno1 <- paste0(seurat$anno1, '-', seurat$biopsy_location)
+seurat$anno1 <- factor(seurat$anno1, levels = paste0(GroupTested, '-', c('AC', 'POU', 'PP', 'TI')))
+```
+
+```{r}
+addinfo <- FetchData(seurat, features)
+df <- bind_cols(seurat@meta.data, addinfo)
+
+palette <- custom_colors_location
+plots <- list()
+
+for (feature in features){
+  plots[[feature]] <- 
+    ggviolin(df, x = 'anno1', y = feature, fill = 'biopsy_location', 
+             palette = palette, scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=15),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=20),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=20, hjust=0.5, face = 'bold'))+
+      labs(title = '')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+}
+
+pdf(paste0(out.dir, plot.title, '_vln.pdf'), width = 7, height = 5)
+print(plots)
+dev.off()
+```
+
+
+
+### 12. Macrophage
+
+```{r}
+features_all <- readRDS('~/yuzhao1/work/final_RC2rna/deg/myeloid/Macrophage/DEGs-Macrophage_selected.rds')
+## 1. non-TF genes
+features <- features_all %>% unlist() %>% unique() %>% setdiff(., features_all$tfs)
+GroupTested <- 'Macrophage'
+plot.title <- 'Macrophage'
+
+# # 2. TFs
+# features <- features_all$tfs
+# GroupTested <- 'Macrophage'
+# plot.title <- 'Macrophage_tfs'
+
+out.dir <- '/project/gca/yuzhao1/work/manu/rc2/plots/2rna_deg/macrophage/'
+```
+
+```{r}
+seurat <- subset(union, cells= Cells(union)[union$anno1 %in% c("Macrophage")])
+# seurat$anno1 <- 'Macrophage'
+groupToTest <- 'Macrophage'
+seurat$anno1 <- paste0(seurat$anno1, '-', seurat$biopsy_location)
+seurat$anno1 <- factor(seurat$anno1, levels = paste0(GroupTested, '-', c('AC', 'POU', 'PP', 'TI')))
+```
+
+```{r}
+addinfo <- FetchData(seurat, features)
+df <- bind_cols(seurat@meta.data, addinfo)
+
+palette <- custom_colors_location
+plots <- list()
+
+for (feature in features){
+  plots[[feature]] <- 
+    ggviolin(df, x = 'anno1', y = feature, fill = 'biopsy_location', 
+             palette = palette, scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=15),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=20),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=20, hjust=0.5, face = 'bold'))+
+      labs(title = '')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+}
+
+pdf(paste0(out.dir, plot.title, '_vln.pdf'), width = 7, height = 5)
+print(plots)
+dev.off()
+```

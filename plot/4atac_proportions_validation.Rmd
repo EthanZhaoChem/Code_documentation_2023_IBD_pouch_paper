@@ -1,0 +1,221 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('~/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+```
+
+###################### 1. parameters ########################
+
+```{r}
+out.dir <- '~/yuzhao1/work/manu/rc2/plots/4atac_proportions_validation/'
+```
+
+###################### 2.1 prepare ATAC data ########################
+
+```{r}
+proj <- loadArchRProject(path = "~/yuzhao1/work/final_RC2atac/dataset/gut_2kmin_6TSS_DoubletRatio2_filtered/")
+```
+
+```{r}
+atac_union_meta <- as.data.frame(proj@cellColData)
+atac_union_meta$Sample_ID <- paste0(atac_union_meta$patient, '-', atac_union_meta$biopsy_location)
+```
+
+```{r}
+# prepare data
+atac_union_meta$anno1 %<>% as.character()
+df_atac <- table(atac_union_meta[,c("Sample_ID", 'anno1')]) %>% as.data.frame() 
+meta.anno1.lineage <- unique(atac_union_meta[, c('anno1', 'lineage')])
+meta.sample.location <- unique(atac_union_meta[, c('Sample_ID', 'biopsy_location')])
+meta.lineage.Ncells <- table(atac_union_meta[, c('lineage')])
+meta.lineage.Ncells.loc <- table(atac_union_meta[, c('lineage', 'Sample_ID')]) %>% as.data.frame()
+df_atac$lineage <- mapvalues(df_atac$anno1, from = meta.anno1.lineage$anno1, to = meta.anno1.lineage$lineage)
+df_atac$lineage_Ncells <- mapvalues(df_atac$lineage, from = names(meta.lineage.Ncells), to = meta.lineage.Ncells)
+
+df_atac$lineage_Ncells_loc <- mapvalues(paste0(df_atac$Sample_ID,df_atac$lineage), 
+                                    from = paste0(meta.lineage.Ncells.loc$Sample_ID, meta.lineage.Ncells.loc$lineage), 
+                                    to = meta.lineage.Ncells.loc$Freq)
+df_atac$celltype_proportion_per_lineageLoc <- as.numeric(df_atac$Freq)/as.numeric(df_atac$lineage_Ncells_loc)
+df_atac$biopsy_location <- mapvalues(df_atac$Sample_ID, from = meta.sample.location$Sample_ID, to = meta.sample.location$biopsy_location)
+df_atac$biopsy_location <- factor(df_atac$biopsy_location, levels = c('AC','POU','PP','TI'))
+```
+
+###################### 2.2 prepare RNA data  ########################
+
+
+```{r}
+rna_seurat <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/gut_filtered.rds')
+```
+
+```{r}
+# prepare data
+rna_union <- rna_seurat@meta.data
+rna_union$anno1 %<>% as.character()
+rna_union$anno1[rna_union$anno1 == "Contractile pericyte"] <- "Pericyte"
+rna_union$anno1[rna_union$anno1 %in% c("IgA plasma", "IgG plasma")] <- "Plasma cell"
+rna_union$anno1[rna_union$anno1 %in% c("cDC1", "Lymphoid DC", "cDC2")] <- "DC"
+
+rna_union$Sample_ID <- paste0(rna_union$Patient_ID, '-', rna_union$biopsy_location)
+df_rna <- table(rna_union[,c("Sample_ID", 'anno1')]) %>% as.data.frame() 
+meta.anno1.lineage <- unique(rna_union[, c('anno1', 'lineage')])
+meta.sample.location <- unique(rna_union[, c('Sample_ID', 'biopsy_location')])
+meta.lineage.Ncells <- table(rna_union[, c('lineage')])
+meta.lineage.Ncells.loc <- table(rna_union[, c('lineage', 'Sample_ID')]) %>% as.data.frame()
+df_rna$lineage <- mapvalues(df_rna$anno1, from = meta.anno1.lineage$anno1, to = meta.anno1.lineage$lineage)
+df_rna$lineage_Ncells <- mapvalues(df_rna$lineage, from = names(meta.lineage.Ncells), to = meta.lineage.Ncells)
+
+
+df_rna$lineage_Ncells_loc <- mapvalues(paste0(df_rna$Sample_ID,df_rna$lineage), 
+                                    from = paste0(meta.lineage.Ncells.loc$Sample_ID, meta.lineage.Ncells.loc$lineage), 
+                                    to = meta.lineage.Ncells.loc$Freq)
+df_rna$celltype_proportion_per_lineageLoc <- as.numeric(df_rna$Freq)/as.numeric(df_rna$lineage_Ncells_loc)
+df_rna$biopsy_location <- mapvalues(df_rna$Sample_ID, from = meta.sample.location$Sample_ID, to = meta.sample.location$biopsy_location)
+df_rna$biopsy_location <- factor(df_rna$biopsy_location, levels = c('AC','POU','PP','TI'))
+```
+
+
+###################### 3.1 in pouch  ########################
+
+```{r}
+df1 <- df_rna
+df2 <- df_atac
+```
+
+```{r}
+setdiff(unique(df1$anno1), unique(df2$anno1))
+```
+
+```{r}
+df_corr <- data.frame(celltype = unique(df2$anno1), 'AC'=10, 'TI'=10, 'PP'=10, 'POU'=10)
+
+for (temp.loc in unique(df1$biopsy_location)){
+  df1.loc <- subset(df1, biopsy_location == temp.loc)
+  df2.loc <- subset(df2, biopsy_location == temp.loc)
+  
+  for (temp.celltype in unique(df2$anno1)){
+    df1_celltype <- subset(df1.loc, anno1 == temp.celltype)
+    df2_celltype <- subset(df2.loc, anno1 == temp.celltype)
+    df1_celltype <- df1_celltype[order(df1_celltype$Sample_ID, decreasing = F), ]
+    score.corr <- cor(df1_celltype$celltype_proportion_per_lineageLoc, 
+                      df2_celltype$celltype_proportion_per_lineageLoc,
+                      method = 'spearman')
+    
+    df_corr[which(df_corr$celltype == temp.celltype), temp.loc] <- score.corr
+  }
+}
+
+rownames(df_corr) <- df_corr$celltype
+df_corr$celltype <- NULL
+```
+
+```{r}
+# order the groups
+df_corr <- df_corr[names(atac.unionHeatmap.markers), ]
+```
+
+```{r}
+plot.title <- 'rna_atac_samplePropCorr'
+
+pdf(paste0(out.dir, plot.title , '_location.pdf'), width = 5, height = 7)
+p1 <- Heatmap(df_corr, col = rc2_rna_heatmap_colors_gradient1, cluster_columns = F, 
+              cluster_rows = F,
+              show_row_dend = T, show_column_dend = F, show_row_names = T, row_names_gp = gpar(fontsize = 10),
+              heatmap_legend_param = list(title = "Sample wise correlation"),
+              use_raster = F)
+  
+print(p1)
+
+dev.off()
+```
+
+```{r}
+plot.title <- 'T_rna_atac_samplePropCorr'
+
+pdf(paste0(out.dir, plot.title , '_location.pdf'), width = 12, height = 3)
+ht <- Heatmap(t(df_corr), col = rc2_rna_heatmap_colors_gradient1, cluster_columns = F, 
+              cluster_rows = F, column_names_rot = 45,
+              show_row_dend = F, show_column_dend = F, show_row_names = T, row_names_gp = gpar(fontsize = 10),
+              
+              heatmap_legend_param = list(title = "Sample wise correlation"),
+              use_raster = F)
+
+print(ht)
+dev.off()
+```
+
+```{r}
+# considering some groups don't have any cells, if there are less than 50 cells in that group, use NA
+df_corr_cleaned <- df_corr
+df_corr_label <- df_corr
+
+df_cellnumber <- as.data.frame(table(proj@cellColData[, c('anno1', 'biopsy_location')]))
+NA_coords <- df_cellnumber[which(df_cellnumber$Freq < 50), c('anno1', 'biopsy_location')]
+NA_coords$anno1 %<>% as.character(.)
+NA_coords$biopsy_location %<>% as.character(.)
+
+for (i in 1:nrow(NA_coords)) {
+  row <- NA_coords[i ,1]
+  col <- NA_coords[i ,2]
+  df_corr_label[row, col] <- 999
+}
+
+```
+
+```{r}
+plot.title <- 'T_rna_atac_samplePropCorr_NA_identified'
+mat1 <- t(df_corr_cleaned)
+mat2 <- t(df_corr_label)
+col_fun = colorRamp2(seq(-1,1,2/10), rev(c('#a50026','#d73027','#f46d43','#fdae61','#fee08b','#ffffbf','#d9ef8b','#a6d96a','#66bd63','#1a9850','#006837')))
+
+pdf(paste0(out.dir, plot.title , '_location.pdf'), width = 12, height = 2.6)
+
+ht <- Heatmap(mat1, 
+              col = col_fun, 
+              cluster_columns = F, 
+              cluster_rows = F, column_names_rot = 45,
+              show_row_dend = F, show_column_dend = F, show_row_names = T, row_names_gp = gpar(fontsize = 10),
+              
+              heatmap_legend_param = list(title = "Sample wise correlation"),
+              use_raster = F,
+              
+              cell_fun = function(j, i, x, y, w, h, fill) {
+                if(mat2[i, j] == 999) {grid.text("-", x, y)}}
+              )
+
+draw(ht, padding = unit(c(2, 20, 2, 2), "mm"))
+dev.off()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

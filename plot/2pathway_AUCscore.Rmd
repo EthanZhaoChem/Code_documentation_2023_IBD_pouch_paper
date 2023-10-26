@@ -1,0 +1,621 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+
+packages <- c('dplyr', 'Seurat', 'patchwork', 'ggplot2','ggpubr', 'ggsci', 'plyr', 'stringr' )
+library(AUCell)
+library(GSEABase)
+library(pheatmap)
+library(ggrepel)
+library(Matrix)
+library(msigdbr)
+library(clusterProfiler)
+library(org.Hs.eg.db)
+lapply(packages, library, character.only = TRUE)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+```{r, include = F, eval=F}
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+```
+
+
+### -1. check geneset
+
+```{r}
+pathway_name <- 'HALLMARK_INFLAMMATORY_RESPONSE'
+xx <- msigdb.human[msigdb.human $gs_name %in% c(pathway_name), ]$gene_symbol
+xx
+```
+
+
+### 0. helper functions
+
+```{r}
+ethan_get_auc_score <- function(cells_ranking, geneset, aucMaxRank_manual, geneset_name = 'TBD'){
+  geneset <- unique(geneset)
+  geneSet <- GeneSet(geneset, setName = geneset_name)
+  cells_AUC <- AUCell_calcAUC(geneSet, cells_ranking, aucMaxRank = ceiling(aucMaxRank_manual * nrow(cells_ranking)))
+  AUC_scores <- getAUC(cells_AUC) 
+  score_temp <- as.data.frame(t(AUC_scores))
+  colnames(score_temp) <- c(geneset_name)
+  results <- list()
+  results[[1]] <- score_temp
+  results[[2]] <- cells_AUC
+  return(results)
+}
+```
+
+
+### 1. read files
+
+```{r}
+union <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/gut_filtered.rds')
+msigdb.human <- readRDS('/project/gca/yuzhao1/resource/msigdb/msigdb.human.rds')
+cells_ranking <-readRDS('~/yuzhao1/work/final_RC2rna/deg/union/union_cells_ranking.rds')
+```
+
+```{r}
+## 0. across anno1s
+out.dir <- '~/yuzhao1/work/manu/rc2/plots/2rna_deg/acrossCelltypes/'
+seurat <- union
+seurat$anno1[seurat$anno1 %in% c('EC1-1', 'EC1-2', "EC2-1", "EC2-2")] <- 'EC'
+seurat$anno1[seurat$anno1 %in% c('Goblet1', 'Goblet2')] <- 'Goblet'
+seurat$anno1[seurat$anno1 %in% c('Stromal-1', "Stromal-2", "Stromal-3" )] <- 'Stromal'
+Grouptested <- 'tcell'
+seurat <- subset(seurat, cells = Cells(seurat)[seurat$lineage %in% c('tcell')])
+
+## 1. EC
+out.dir <- '~/yuzhao1/work/manu/rc2/plots/2rna_deg/EC_pathway/'
+Grouptested <- 'EC'
+seurat <- subset(union, cells = Cells(union)[union$anno1 %in% c('EC1-1', 'EC1-2', "EC2-1", "EC2-2")])
+seurat$anno1 <- seurat$anno1_loc
+seurat$anno1 <- factor(seurat$anno1, levels = c('EC-AC', 'EC-POU2', 'EC-POU1', 'EC-PP', 'EC-TI'))
+
+## 2. Stem
+out.dir <- '~/yuzhao1/work/manu/rc2/plots/2rna_deg/stem/'
+Grouptested <- 'Stem'
+seurat <- subset(union, cells = Cells(union)[union$anno1 %in% c(GroupTested)])
+seurat$anno1 <- paste0(seurat$anno1, '-', seurat$biopsy_location)
+seurat$anno1 <- factor(seurat$anno1, levels = paste0(GroupTested, '-', c('AC', 'POU', 'PP', 'TI')))
+
+
+
+```
+
+
+### 2. extract gene names by pathway names
+
+```{r}
+genesets <- list()
+pathway_names <- c('GOBP_ANTIMICROBIAL_HUMORAL_RESPONSE',
+                  'GOBP_CELLULAR_LIPID_CATABOLIC_PROCESS',
+                  'KEGG_RIBOSOME',
+                  'KEGG_OXIDATIVE_PHOSPHORYLATION',
+                  'REACTOME_METABOLISM_OF_LIPIDS',
+                  'REACTOME_METABOLISM_OF_FAT_SOLUBLE_VITAMINS',
+                  'KEGG_CELL_ADHESION_MOLECULES_CAMS',
+                  'KEGG_STEROID_HORMONE_BIOSYNTHESIS',
+                  'KEGG_INTESTINAL_IMMUNE_NETWORK_FOR_IGA_PRODUCTION',
+                  'HALLMARK_MYC_TARGETS_V1',
+                  'HALLMARK_MYC_TARGETS_V2',
+                  'HALLMARK_INTERFERON_GAMMA_RESPONSE',
+                  'HALLMARK_IL2_STAT5_SIGNALING',
+                  'HALLMARK_BILE_ACID_METABOLISM',
+                  'REACTOME_HEDGEHOG_LIGAND_BIOGENESIS',
+                  'GOBP_HUMORAL_IMMUNE_RESPONSE',
+                  'GOBP_ANTIMICROBIAL_HUMORAL_RESPONSE',
+                  'GOBP_DEFENSE_RESPONSE_TO_BACTERIUM',
+                  'DESCARTES_FETAL_INTESTINE_INTESTINAL_EPITHELIAL_CELLS')
+# pathway_names <- inflammation_pathways
+
+for(pathway_name in pathway_names){
+  genesets[[pathway_name]] <- msigdb.human[msigdb.human $gs_name %in% c(pathway_name), ]$gene_symbol
+}
+```
+
+
+### 3. score pathways
+
+```{r}
+for(pathway_name in pathway_names){
+  results <- ethan_get_auc_score(cells_ranking = cells_ranking,
+                                 geneset = genesets[[pathway_name]],
+                                 aucMaxRank_manual = 0.05,
+                                 geneset_name  = pathway_name)
+  
+  scoreDf <- results[[1]]
+  seurat <- AddMetaData(
+    object = seurat,
+    metadata = scoreDf,
+    col.name = names(scoreDf)
+  )
+}
+
+```
+
+### heatmap
+
+```{r}
+df <- seurat@meta.data[, c('anno1', pathway_names)]
+
+df %<>% 
+  group_by(anno1) %>% 
+  dplyr::summarize(across(all_of(pathway_names), mean)) %>%
+  as.data.frame() 
+rownames(df) <- df$anno1
+df$anno1 <- NULL
+
+df <- mutate_all(df, function(x) as.numeric(as.character(x)))
+df %<>% scale()
+```
+
+```{r}
+pdf(paste0(out.dir, '00heatmap.pdf'), width = 18, height = 10)
+col_fun = colorRamp2(seq(-2, 2, 4/8), rev(c('#b2182b','#d6604d','#f4a582','#fddbc7','#f7f7f7','#d1e5f0','#92c5de','#4393c3','#2166ac')))
+p1 <- Heatmap(df,   
+              col = c('#fcfbfd','#efedf5','#bcbddc','#9e9ac8','#807dba','#6a51a3','#54278f','#3f007d'),
+              # row_split = factor(c(rep('Pouch', 3), c(rep('Pre Pouch', 3))),
+              #                    levels = c('Pouch', 'Pre Pouch')),
+              # row_gap = unit(5, "mm"), column_gap = unit(0, "mm"), 
+              border = T,
+              border_gp = gpar(col = "black", lty = 1, lwd = 1),
+              
+              column_title = NULL,
+              cluster_columns = T, 
+              show_column_dend = F,
+              show_column_names = T,
+              column_names_rot = 45,              
+              column_names_gp = gpar(fontsize = 12),
+              column_names_side = "top",
+
+              row_names_gp = gpar(fontsize = 12),
+              cluster_rows = F, 
+              show_row_dend = F, 
+              show_row_names = T,
+              heatmap_legend_param = list(title = ""),
+              use_raster = F)
+draw(p1, padding = unit(c(50, 50, 50, 50), "mm"))
+
+dev.off()
+```
+
+
+### 4. compare AUC score 
+
+
+```{r}
+## 1. among locations in same group
+df <- seurat@meta.data
+
+palette <- manual_colors_rc2_location
+plots <- list()
+my_comparisons <- list(c('EC-AC', 'EC-POU2'), c('EC-POU2', 'EC-POU1'), c('EC-POU2','EC-PP'), c('EC-POU2','EC-TI'))
+
+for (feature in pathway_names){
+  df$feature_to_plot <- df[[feature]] 
+  p <- ggviolin(df, x = 'anno1', y = 'feature_to_plot', fill = 'biopsy_location', 
+             palette = palette, scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      stat_compare_means(feature_to_plot ~ anno1, 
+                       comparisons = my_comparisons,
+                       # label.y = c(0.19, 0.21, 0.23, 0.25),
+                       label = "p.signif",                    
+                       method = "wilcox.test",
+                       paired = F)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=10),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=15),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=11, hjust=0.5, face = 'bold'))+
+      labs(title = feature, y = 'AUC enrichment score')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+  
+  plots[[feature]] <- p
+}
+
+pdf(paste0(out.dir, Grouptested, ': pathways1', '.pdf'), width = 5, height = 5)
+print(plots)
+dev.off()
+```
+
+
+
+
+```{r}
+# single plot
+df <- seurat@meta.data
+palette <- manual_colors_rc2_location
+feature <- 'GOBP_ANTIMICROBIAL_HUMORAL_RESPONSE'
+df$feature_to_plot <- df[[feature]] 
+
+my_comparisons <- list(c('EC-AC', 'EC-POU2'), c('EC-POU2', 'EC-POU1'), c('EC-POU2','EC-PP'), c('EC-POU2','EC-TI'))
+p <- ggviolin(df, x = 'anno1', y = 'feature_to_plot', fill = 'biopsy_location', 
+             palette = palette, scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      stat_compare_means(feature_to_plot ~ anno1, 
+                       comparisons = my_comparisons,
+                       label.y = c(0.19, 0.21, 0.23, 0.25),
+                       label = "p.signif",                    
+                       method = "wilcox.test",
+                       paired = F)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=10),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=15),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=15, hjust=0.5, face = 'bold'))+
+      labs(title = 'Antimicrobial humoral response', y = 'AUC enrichment score')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+
+pdf(paste0(out.dir, Grouptested, ':', feature, '.pdf'), width = 5, height = 5)
+print(p)
+dev.off()
+```
+
+
+
+```{r}
+# single plot
+df <- seurat@meta.data
+palette <- manual_colors_rc2_location
+feature <- 'KEGG_RIBOSOME'
+df$feature_to_plot <- df[[feature]] 
+
+my_comparisons <- list(c('EC-POU2','EC-PP'), c('EC-POU1','EC-PP'))
+p <- ggviolin(df, x = 'anno1', y = 'feature_to_plot', fill = 'biopsy_location', 
+             palette = palette, scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      stat_compare_means(feature_to_plot ~ anno1, 
+                       comparisons = my_comparisons,
+                       label.y = c(1, 0.92),
+                       label = "p.signif",                    
+                       method = "wilcox.test",
+                       paired = F)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=10),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=15),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=15, hjust=0.5, face = 'bold'))+
+      labs(title = 'Ribosome activity', y = 'AUC enrichment score')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+
+pdf(paste0(out.dir, Grouptested, ':', feature, '.pdf'), width = 5, height = 5)
+print(p)
+dev.off()
+```
+
+```{r}
+# single plot
+df <- seurat@meta.data
+palette <- manual_colors_rc2_location
+feature <- 'HALLMARK_BILE_ACID_METABOLISM'
+df$feature_to_plot <- df[[feature]] 
+
+my_comparisons <- list(c('EC-POU2', 'EC-PP'))
+p <- ggviolin(df, x = 'anno1', y = 'feature_to_plot', fill = 'biopsy_location', 
+             palette = palette, scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      stat_compare_means(feature_to_plot ~ anno1, 
+                       comparisons = my_comparisons,
+                       label.y = c(0.15),
+                       label = "p.signif",                    
+                       method = "wilcox.test",
+                       paired = F)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=10),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=15),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=15, hjust=0.5, face = 'bold'))+
+      labs(title = 'Bile acid metabolism', y = 'AUC enrichment score')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+
+pdf(paste0(out.dir, Grouptested, ':', feature, '.pdf'), width = 5, height = 5)
+print(p)
+dev.off()
+```
+
+```{r}
+# single plot
+df <- seurat@meta.data
+palette <- manual_colors_rc2_location
+feature <- 'REACTOME_METABOLISM_OF_LIPIDS'
+df$feature_to_plot <- df[[feature]] 
+
+my_comparisons <- list(c('EC-POU2', 'EC-PP'))
+p <- ggviolin(df, x = 'anno1', y = 'feature_to_plot', fill = 'biopsy_location', 
+             palette = palette, scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      stat_compare_means(feature_to_plot ~ anno1, 
+                       comparisons = my_comparisons,
+                       label.y = c(0.12),
+                       label = "p.signif",                    
+                       method = "wilcox.test",
+                       paired = F)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=10),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=15),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=15, hjust=0.5, face = 'bold'))+
+      labs(title = 'Lipid metabolism', y = 'AUC enrichment score')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+
+pdf(paste0(out.dir, Grouptested, ':', feature, '.pdf'), width = 5, height = 5)
+print(p)
+dev.off()
+```
+
+
+```{r}
+# single plot
+df <- seurat@meta.data
+palette <- manual_colors_rc2_location
+feature <- 'REACTOME_METABOLISM_OF_FAT_SOLUBLE_VITAMINS'
+df$feature_to_plot <- df[[feature]] 
+
+my_comparisons <- list(c('EC-POU2', 'EC-PP'))
+p <- ggviolin(df, x = 'anno1', y = 'feature_to_plot', fill = 'biopsy_location', 
+             palette = palette, scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      stat_compare_means(feature_to_plot ~ anno1, 
+                       comparisons = my_comparisons,
+                       label.y = c(0.28),
+                       label = "p.signif",                    
+                       method = "wilcox.test",
+                       paired = F)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=10),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=15),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=15, hjust=0.5, face = 'bold'))+
+      labs(title = 'Metabolism of fat soluble vitamins', y = 'AUC enrichment score')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+
+pdf(paste0(out.dir, Grouptested, ':', feature, '.pdf'), width = 5, height = 5)
+print(p)
+dev.off()
+```
+
+
+```{r}
+# single plot
+df <- seurat@meta.data
+palette <- manual_colors_rc2_location
+feature <- 'KEGG_CELL_ADHESION_MOLECULES_CAMS'
+df$feature_to_plot <- df[[feature]] 
+
+my_comparisons <- list(c('EC-POU2', 'EC-PP'))
+p <- ggviolin(df, x = 'anno1', y = 'feature_to_plot', fill = 'biopsy_location', 
+             palette = palette, scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      stat_compare_means(feature_to_plot ~ anno1, 
+                       comparisons = my_comparisons,
+                       label.y = c(0.15),
+                       label = "p.signif",                    
+                       method = "wilcox.test",
+                       paired = F)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=10),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=15),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=15, hjust=0.5, face = 'bold'))+
+      labs(title = 'Cell adhesion molecules', y = 'AUC enrichment score')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+
+pdf(paste0(out.dir, Grouptested, ':', feature, '.pdf'), width = 5, height = 5)
+print(p)
+dev.off()
+```
+
+
+```{r}
+# single plot
+df <- seurat@meta.data
+palette <- manual_colors_rc2_location
+feature <- 'KEGG_STEROID_HORMONE_BIOSYNTHESIS'
+df$feature_to_plot <- df[[feature]] 
+
+my_comparisons <- list(c('EC-POU2', 'EC-PP'), c('EC-POU2', 'EC-POU1'))
+p <- ggviolin(df, x = 'anno1', y = 'feature_to_plot', fill = 'biopsy_location', 
+             palette = palette, scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      stat_compare_means(feature_to_plot ~ anno1, 
+                       comparisons = my_comparisons,
+                       label.y = c(0.18, 0.16),
+                       label = "p.signif",                    
+                       method = "wilcox.test",
+                       paired = F)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=10),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=15),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=15, hjust=0.5, face = 'bold'))+
+      labs(title = 'Steroid hormone biosynthesis', y = 'AUC enrichment score')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+
+pdf(paste0(out.dir, Grouptested, ':', feature, '.pdf'), width = 5, height = 5)
+print(p)
+dev.off()
+```
+
+
+```{r}
+# single plot
+df <- seurat@meta.data
+palette <- manual_colors_rc2_location
+feature <- 'KEGG_ANTIGEN_PROCESSING_AND_PRESENTATION'
+df$feature_to_plot <- df[[feature]] 
+
+my_comparisons <- list(c('EC-POU2', 'EC-PP'))
+p <- ggviolin(df, x = 'anno1', y = 'feature_to_plot', fill = 'biopsy_location', 
+             palette = palette, scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      stat_compare_means(feature_to_plot ~ anno1, 
+                       comparisons = my_comparisons,
+                       label.y = c(0.33),
+                       label = "p.signif",                    
+                       method = "wilcox.test",
+                       paired = F)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=10),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=15),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=15, hjust=0.5, face = 'bold'))+
+      labs(title = 'Antigen processing and presentation', y = 'AUC enrichment score')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+
+pdf(paste0(out.dir, Grouptested, ':', feature, '.pdf'), width = 5, height = 5)
+print(p)
+dev.off()
+```
+
+```{r}
+# single plot
+df <- seurat@meta.data
+palette <- manual_colors_rc2_location
+feature <- 'HALLMARK_MYC_TARGETS_V2'
+df$feature_to_plot <- df[[feature]] 
+
+my_comparisons <- list(c('EC-POU2', 'EC-POU1'), c('EC-AC', 'EC-POU1'))
+p <- ggviolin(df, x = 'anno1', y = 'feature_to_plot', fill = 'biopsy_location', 
+             palette = palette, scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      stat_compare_means(feature_to_plot ~ anno1, 
+                       comparisons = my_comparisons,
+                       label.y = c(0.18, 0.20),
+                       label = "p.signif",                    
+                       method = "wilcox.test",
+                       paired = F)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=10),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=15),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=15, hjust=0.5, face = 'bold'))+
+      labs(title = 'MYC targets', y = 'AUC enrichment score')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+
+pdf(paste0(out.dir, Grouptested, ':', feature, '.pdf'), width = 5, height = 5)
+print(p)
+dev.off()
+```
+
+
+```{r}
+# single plot
+df <- seurat@meta.data
+palette <- manual_colors_rc2_location
+feature <- 'HALLMARK_IL2_STAT5_SIGNALING'
+df$feature_to_plot <- df[[feature]] 
+
+my_comparisons <- list(c('EC-POU2', 'EC-POU1'), c('EC-AC', 'EC-POU1'))
+p <- ggviolin(df, x = 'anno1', y = 'feature_to_plot', fill = 'biopsy_location', 
+             palette = palette, scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      stat_compare_means(feature_to_plot ~ anno1, 
+                       comparisons = my_comparisons,
+                       label.y = c(0.13, 0.15),
+                       label = "p.signif",                    
+                       method = "wilcox.test",
+                       paired = F)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=10),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=15),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=15, hjust=0.5, face = 'bold'))+
+      labs(title = 'IL2 STAT5 signaling', y = 'AUC enrichment score')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+
+pdf(paste0(out.dir, Grouptested, ':', feature, '.pdf'), width = 5, height = 5)
+print(p)
+dev.off()
+```
+
+
+
+```{r}
+# single plot
+df <- seurat@meta.data
+palette <- manual_colors_rc2_location
+feature <- 'HALLMARK_INTERFERON_GAMMA_RESPONSE'
+df$feature_to_plot <- df[[feature]] 
+
+my_comparisons <- list(c('EC-POU2', 'EC-POU1'), c('EC-AC', 'EC-POU1'))
+p <- ggviolin(df, x = 'anno1', y = 'feature_to_plot', fill = 'biopsy_location', 
+             palette = palette, scale = 'width', width=0.8, 
+             trim = T, position = position_dodge(0.7), draw_quantiles = 0.5)+
+      stat_compare_means(feature_to_plot ~ anno1, 
+                       comparisons = my_comparisons,
+                       label.y = c(0.2, 0.22),
+                       label = "p.signif",                    
+                       method = "wilcox.test",
+                       paired = F)+
+      labs( x = NULL) +
+      theme_pubr()+
+      theme(axis.text.y = element_text(size=10),
+      	  axis.text.x = element_text(angle=45, hjust = 1, vjust = 1),
+      	  axis.title = element_text(size=15),
+      	  legend.title = element_blank(),
+      	  legend.text = element_text(size=10),
+      	  legend.position = "bottom",
+      	  plot.title = element_text(size=15, hjust=0.5, face = 'bold'))+
+      labs(title = 'Interferon Gamma response', y = 'AUC enrichment score')+
+      guides(colour = guide_legend(override.aes = list(size = 6, shape = 15)))
+
+pdf(paste0(out.dir, Grouptested, ':', feature, '.pdf'), width = 5, height = 5)
+print(p)
+dev.off()
+```
+
+
+
+
+
