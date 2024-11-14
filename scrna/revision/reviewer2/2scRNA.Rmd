@@ -1,0 +1,117 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+knitr::opts_knit$set(root.dir = '/home/yuzhao1/gca/yuzhao1/work/gca_rna/')
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+source('~/yuzhao1/scripts/plot.R')
+```
+
+
+```{r}
+out.dir <- '~/yuzhao1/work/final_RC2rna/0revision/reviewer2/plots/'
+seurat <- readRDS('~/yuzhao1/work/final_RC2rna/annotation/rds/others3.rds')
+```
+
+```{r, fig.height=9, fig.width=8.5}
+df <- data.frame(seurat@meta.data)
+df$embedding1 <- data.frame(seurat@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(seurat@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$cluster_name <- seurat$anno1
+p <- plot_df_umap_custom(df, show.label = 'name')
+
+pdf(paste0(out.dir, 'umap_stromal.pdf'), height = 6.5, width = 5.5)
+print(p)
+dev.off()
+```
+
+
+
+#### Check specific markers
+
+
+```{r}
+feature <- 'NRG1'
+df <- data.frame(seurat@meta.data)
+df$embedding1 <- data.frame(seurat@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(seurat@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$feature_to_plot <- FetchData(seurat, feature) %>% unlist()
+p1 <- plot_df_umap_custom(df, plot_feature = T)
+p2 <- plot_df_umap_custom(df, plot_feature = T)+
+  facet_wrap(~ biopsy_location) +
+  theme(
+    strip.background = element_rect(fill = "white", colour = "white"),
+    strip.text = element_text(size = 12)
+  )
+
+pdf(paste0(out.dir, 'feature_map_',feature , '.pdf'), height = 6.5, width = 5.5)
+print(p1)
+print(p2)
+dev.off()
+```
+
+
+```{r}
+feature <- 'GREM1'
+df <- data.frame(seurat@meta.data)
+df$embedding1 <- data.frame(seurat@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(seurat@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$feature_to_plot <- FetchData(seurat, feature) %>% unlist()
+p1 <- plot_df_umap_custom(df, plot_feature = T)
+p2 <- plot_df_umap_custom(df, plot_feature = T)+
+  facet_wrap(~ biopsy_location) +
+  theme(
+    strip.background = element_rect(fill = "white", colour = "white"),
+    strip.text = element_text(size = 12)
+  )
+
+pdf(paste0(out.dir, 'feature_map_',feature , '.pdf'), height = 6.5, width = 5.5)
+print(p1)
+print(p2)
+dev.off()
+```
+
+```{r}
+feature <- 'OGN'
+df <- data.frame(seurat@meta.data)
+df$embedding1 <- data.frame(seurat@reductions$harmony_umap@cell.embeddings)$UMAP_1
+df$embedding2 <- data.frame(seurat@reductions$harmony_umap@cell.embeddings)$UMAP_2
+df$feature_to_plot <- FetchData(seurat, feature) %>% unlist()
+p1 <- plot_df_umap_custom(df, plot_feature = T)
+p2 <- plot_df_umap_custom(df, plot_feature = T)+
+  facet_wrap(~ biopsy_location) +
+  theme(
+    strip.background = element_rect(fill = "white", colour = "white"),
+    strip.text = element_text(size = 12)
+  )
+
+pdf(paste0(out.dir, 'feature_map_',feature , '.pdf'), height = 6.5, width = 5.5)
+print(p1)
+print(p2)
+dev.off()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
