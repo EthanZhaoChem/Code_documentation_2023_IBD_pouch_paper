@@ -1,0 +1,273 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(ArchR)
+library(parallel)
+library(BSgenome.Hsapiens.UCSC.hg38)
+library(ComplexHeatmap)
+source('~/yuzhao1/scripts/plot.R')
+source('~/yuzhao1/work/manu/rc2/scripts/helper_seurat.R')
+source('~/yuzhao1/scripts/seurat/deg_pseudobulk.R')
+source('/project/gca/yuzhao1/work/manu/rc2/scripts/rna_annotation_markers.R')
+source('~/yuzhao1/work/manu/rc2/scripts/umap_colors.R')
+source('~/yuzhao1/work/manu/rc2/scripts/rna_deg_markers.R')
+source('~/yuzhao1/scripts/helper_archr.R')
+source('~/yuzhao1/work/manu/rc2/scripts/tfs.R')
+
+out.dir <- '/project/gca/yuzhao1/work/final_RC2rna/0revision/reviewer3/1control_ethnicity/plots_heatmap/'
+"%&%" <- function(a, b) paste0(a, b)
+```
+
+```{r}
+seurat_all <- readRDS('~/yuzhao1/work/final_RC2rna/0revision/reviewer3/1control_ethnicity/seurat_ipaa_and_all_controls.rds')
+seurat_all$Race[seurat_all$Race == 'More than one Race'] <- 'Unknown'
+```
+
+
+```{r}
+seurat <- subset(seurat_all, cells = Cells(seurat_all)[seurat_all$anno1 %in% c('Goblet1', 'Goblet2')])
+seurat$anno1[seurat$anno1 %in% c("Goblet1") & seurat$biopsy_location =='POU'] <- 'Goblet-POU1'
+seurat$anno1[seurat$anno1 %in% c("Goblet2") & seurat$biopsy_location =='POU'] <- 'Goblet-POU2'
+seurat$anno1[seurat$anno1 %in% c("Goblet1", "Goblet2") & seurat$biopsy_location =='PP'] <- 'Goblet-PP'
+seurat$anno1[seurat$anno1 %in% c("Goblet1", "Goblet2") & seurat$biopsy_location =='TI'] <- 'Goblet-TI'
+seurat$anno1[seurat$anno1 %in% c("Goblet1", "Goblet2") & seurat$biopsy_location =='AC'] <- 'Goblet-AC'
+seurat <- subset(seurat, cells = Cells(seurat)[seurat$anno1%in%c('Goblet-AC', 'Goblet-POU2')])
+
+```
+
+```{r}
+patients_uc <- c("OR109",  "OR48",  "OR102", "OR101", "OR43",  "OR72")
+patients_control <- c("HA02", "HA08", "HA11", "HA50", "HA52", "HA54", "HA01", "HA04", "HA07", "HA49", "HA51", "HA55", "HA62", "OR95")
+
+# Unknown HA01 HA04 HA54
+# Black/African-American HA02 HA08 HA11 HA50 HA52
+# the others are white
+```
+
+### 1, prepare gene sets
+
+```{r}
+# get absorptive inflammation and healthy module from smillie data
+deg <- read.csv('~/yuzhao1/work/final_RC2rna/inf_analysis/inf_ec_module.csv')
+xx <- deg[deg$ident %in% c('E.Secretory', "E.Secretory_All", "Goblet", "Immature Goblet") & deg$log2fc > 1, ]
+genes.smillie_secretory_upregulated <- unique(xx$gene)
+
+xx <- deg[deg$ident %in% c('E.Secretory', "E.Secretory_All", "Goblet", "Immature Goblet") & deg$log2fc < -1, ]
+genes.smillie_secretory_downregulated <- unique(xx$gene)
+```
+
+
+```{r}
+# Goblet modules
+# get inflammation and healthy module from pouch EC2 vs AC
+de_results  <- readRDS('~/gca/yuzhao1/work/final_RC2rna/deg/epithelial/goblet/de_results_pou2vsAC_bulk.rds')
+fclist <- topTable(
+  de_results[["Goblet"]],
+  coef = "anno1.subPOU_Goblet-POU2",
+  p.value = 1000000,
+  sort.by = 'logFC',
+  number = 30000
+)
+df <- fclist[, c('logFC', 'adj.P.Val')]
+colnames(df) <- c('logFC', 'p_val_adj')
+
+genes_pouch_goblet2 <- rownames(df[df$p_val_adj<0.05 & df$logFC > 1, ])
+genes_ac_goblet <- rownames(df[df$p_val_adj<0.05 & df$logFC < -1, ])
+
+# to help rank by logFC inside each chunk
+df_goblet_logFC_ref <- df[c(genes_pouch_goblet2, genes_ac_goblet), ]
+```
+
+
+```{r}
+genes.goblet <- readRDS('~/yuzhao1/work/manu/rc2/plots/2rna_deg/goblet/genes_goblet.rds') 
+refgene_TIvsAC_goblet <- genes.goblet$TIvsAC
+refgene_ACvsTI_goblet <- genes.goblet$ACvsTI
+```
+
+
+### 2, plot 
+
+```{r}
+# specify the following parameters for a beautiful heatmap
+all_smillie_shared <- intersect(c(genes_ac_goblet, genes_pouch_goblet2),
+                                c(genes.smillie_secretory_upregulated,
+                                  genes.smillie_secretory_downregulated))
+
+genes_to_plot <- intersect(c(all_smillie_shared),
+                           all_smillie_shared)
+
+plot_suffix <- '_all'
+barwidth1 <- 5
+barwidth2 <- 5
+plot_font_size <- 8
+```
+
+
+```{r}
+df <- as.data.frame(matrix(nrow = length(c(genes_to_plot)),
+                           data = 0,
+                           ncol = 3))
+colnames(df) <- c('pouchGoblet2vsAC', 'shared', 'TIvsAC')
+rownames(df) <- genes_to_plot
+
+# up-regulated in pouch (1) or down-regulated (0)
+df[intersect(genes_pouch_goblet2, genes_to_plot), 'pouchGoblet2vsAC'] <- 1
+df[intersect(genes_ac_goblet, genes_to_plot), 'pouchGoblet2vsAC'] <- 2
+
+# pouch shared with inf (1) or ac shared with non-inf (2)
+df[intersect(c(genes.smillie_secretory_upregulated),
+             rownames(df)), 
+   'shared'] <- 1
+
+df[intersect(c(genes.smillie_secretory_downregulated),
+             rownames(df)), 
+   'shared'] <- 2
+
+# shared with TI vs AC degs
+df[intersect(refgene_TIvsAC_goblet, rownames(df)), 'TIvsAC'] <- 1 
+df[intersect(refgene_ACvsTI_goblet, rownames(df)), 'TIvsAC'] <- 2
+
+# logFC in pouchEC2 vs AC
+df$pouch2vsAC_logFC <- df_goblet_logFC_ref[rownames(df), 'logFC']
+
+# categorize
+df$levels <- paste0(df[,1], df[,2], df[,3])
+
+# some levels are not existing in goblet case, do a sorted intersection
+gb.levels = c('111','112','110', # pouch inf + region
+              '121','122','120',
+           '101','102','100', # pouch other + region
+           '211','212','210',
+           '221','222','220', # ac healthy + region
+           '201','202','200'
+           )
+gb.levels <- gb.levels[gb.levels %in% unique(df$levels)]
+
+df$levels <- factor(df$levels, levels = gb.levels) 
+# sort inside each category
+df <- df[order(df[,'levels'], -df[,'pouch2vsAC_logFC']), ]
+########################################################################
+seurat$anno1_patient <- paste0(seurat$anno1, '-', seurat$Patient_ID)
+seurat$anno1_patient <- factor(seurat$anno1_patient, 
+                                levels = c(paste0('Goblet-AC', '-', patients_control),
+                                           paste0('Goblet-POU2', '-', patients_uc)))
+seurat.sub <- seurat
+
+
+##########
+Average.expression.mtx <- AverageExpression(
+  seurat.sub,
+  assays = 'RNA',
+  features = rownames(df),
+  return.seurat = FALSE,
+  group.by = "anno1_patient",
+  add.ident = NULL,
+  slot = "data",
+  verbose = TRUE
+)
+Average.expression.mtx <-
+  Average.expression.mtx$RNA %>% t(.) %>% scale(.) %>% t(.)
+Average.expression.mtx <-
+  Average.expression.mtx[ rownames(df), c(paste0('Goblet-AC', '-', patients_control),
+                                           paste0('Goblet-POU2', '-', patients_uc))]
+
+# not useful here
+labels <- c("ALDOB",
+"REG4",
+"XKR9",
+"TIMP1",
+"SERPINB5",
+"TFF1",
+"AQP3",
+"S100P",
+"LPCAT1",
+"CEACAM6",
+"C2CD4B",
+"TRIM22",
+"B3GALT5",
+"LYZ",
+"TFF2",
+"SCD", 
+"TGFBI", 
+"KLK12", 
+"SDR16C5", 
+"PDIA4",  
+"MYEOV",
+"LINC00261", 
+"B3GNT7",
+"SEC24D",
+"GSTA1",  
+"ANPEP",  
+"PRAP1",
+"SPINK5",
+"CASD1",
+"RNASE1", 
+"PRDX5",
+"SATB2-AS1", 
+"HMGCS2",
+"CA2", 
+"URAD",
+"PPARG")
+
+# labels <- genes.show
+labels.idx <- match(labels, rownames(Average.expression.mtx))
+
+col2 <- c('0' = '#ffffe5', '1' = '#6a3d9a', '2' = '#fddaec') # shared with smillie inflammed(1), healthy (2)
+col3 <- c('0' = '#ffffe5', '1' = '#4292c6', '2' = '#35978f') # region ti (1) ac (2), other (0)
+anno1 <- rowAnnotation(
+  bar2 = anno_block(gp = gpar(fill = col2[levels(df$levels) %>% substr(., 2, 2)]),
+                    width = unit(barwidth1, "mm")),
+  bar3 = anno_block(gp = gpar(fill = col3[levels(df$levels) %>% substr(., 3, 3)]),
+                    width = unit(barwidth2, "mm")),
+  gp = gpar(col = "black")
+)
+```
+
+
+```{r}
+pdf(paste0(out.dir, 'AA_Goblet_sample_heatmap', plot_suffix, '.pdf'), width = 7, height = 7.5)
+p1 <- Heatmap(Average.expression.mtx, col = rc2_rna_heatmap_colors_gradient1,
+              cluster_columns = F, cluster_rows = F,
+              show_row_dend = F, show_column_dend = F, show_row_names = F,
+              row_split = df$levels,
+              row_title = NULL,
+              row_gap = unit(1, "mm"), 
+              column_gap = unit(0, "mm"), 
+              border = T,
+              rect_gp = gpar(col = "white", lwd = 2), # element border in each rect chunk
+              border_gp = gpar(col = "black", lty = 1, lwd = 1), # chunk border
+              
+              heatmap_legend_param = list(title = "Mean expression z score"),
+              use_raster = F,
+              right_annotation = anno1)+
+  rowAnnotation(link = anno_mark(at = labels.idx, labels = labels, 
+                                 labels_gp = gpar(col = "black", fontsize = plot_font_size)), 
+                width = unit(0.1, "cm") + 
+                max_text_width(labels))
+
+print(p1)
+dev.off()
+```
+
+
+
+
+
+
+
+
+
+
+

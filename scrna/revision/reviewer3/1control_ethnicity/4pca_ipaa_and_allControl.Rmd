@@ -1,0 +1,267 @@
+---
+title: "Raw data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results='hide', message=FALSE, warning=FALSE, fig.height = 7, fig.width = 7)
+knitr::opts_knit$set(root.dir = '/home/yuzhao1/gca/yuzhao1/work/gca_rna/')
+dyn.load('/software/geos-3.9.1-el8-x86_64/lib64/libgeos_c.so')
+
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(stringr)
+library(harmony)
+library(Seurat)
+library(SeuratObject)
+library(Matrix)
+library(Seurat)
+library(readr)
+library(ggplot2)
+library(dplyr)
+library(edgeR)
+library(xts)
+
+source('~/yuzhao1/scripts/plot.R')
+out.dir <- '/project/gca/yuzhao1/work/final_RC2rna/0revision/reviewer3/1control_ethnicity/'
+"%&%" <- function(a, b) paste0(a, b)
+```
+
+
+```{r}
+seurat <- readRDS('~/yuzhao1/work/final_RC2rna/0revision/reviewer3/1control_ethnicity/seurat_ipaa_and_all_controls.rds')
+seurat$Sample_ID <- paste0(seurat$Sample_ID, '@', seurat$anno1)
+FilePath.Sample_ID.mtx <- paste0(out.dir, 'ipaa_and_allControls_union_gene_vs_Sample_ID_RNA_count_mtx.rds') 
+
+# egdeR
+# create empty gene*Sample_ID matrix
+nSample_IDs <- length(unique(seurat$Sample_ID))
+Sample_ID.mtx <- matrix(ncol = nSample_IDs, nrow = nrow(seurat))
+colnames(Sample_ID.mtx) <-  unique(seurat$Sample_ID)
+rownames(Sample_ID.mtx) <- rownames(seurat)
+ct.mtx <- seurat@assays$RNA@counts
+xx <- 0
+start.time <- Sys.time()
+
+gene_chunks <- split(rownames(Sample_ID.mtx), ceiling(seq_along(rownames(Sample_ID.mtx))/1000))
+for (gene.name in gene_chunks){
+  # log
+  end.time <- Sys.time()
+  time.taken <- difftime(end.time, start.time, units = "mins")
+  time.taken <- round(time.taken, 2)
+  cat(paste0('running time: ', time.taken, ' minutes. ', xx, ' genes out of ', nrow(Sample_ID.mtx), ' has been counted.\n'))
+  xx <- xx+length(gene.name)
+
+  # count
+  geneQuantity_perCell <- ct.mtx[gene.name,]
+  geneQuantity_perCell.t <- t(geneQuantity_perCell)
+  geneQuantity_perSample_ID.t <- aggregate(geneQuantity_perCell.t, list(seurat$Sample_ID), sum)
+  geneQuantity_perSample_ID <- t(geneQuantity_perSample_ID.t)
+  Sample_ID.mtx[gene.name, geneQuantity_perSample_ID['Group.1', ]] <- geneQuantity_perSample_ID[gene.name, ]
+}
+
+saveRDS(Sample_ID.mtx, FilePath.Sample_ID.mtx)
+
+Sample_ID.mtx <- readRDS(FilePath.Sample_ID.mtx)
+```
+
+
+```{r}
+Sample_ID.mtx2 <- matrix(as.numeric(Sample_ID.mtx), ncol = ncol(Sample_ID.mtx))
+rownames(Sample_ID.mtx2) <- rownames(Sample_ID.mtx)
+colnames(Sample_ID.mtx2) <- colnames(Sample_ID.mtx)
+
+# select cell types that you want to analyze
+cts.selected <- c('NK', 'DC', 'Macrophage',  'Mast', 'CD8T', 'CD4T', 'gdT', 'B', 'Plasma',
+                  'Stem', 'TA', 'EC1-1', 'EC1-2', 'EC2-1', 'EC2-2', 'BEST4', 'Goblet1', 'Goblet2', 'Fibroblast')
+
+Sample_ID.mtx2 <- Sample_ID.mtx2[, strsplit(colnames(Sample_ID.mtx2), '@') %>% sapply(.,`[[`,2) %in% cts.selected]
+
+# # if only use variable features
+# variable_genes <- VariableFeatures(seurat)
+# Sample_ID.mtx2 <- Sample_ID.mtx2[variable_genes, ]
+
+# # if remove MT genes
+# MT_genes <- rownames(Sample_ID.mtx2)[grep("^MT-", rownames(Sample_ID.mtx2))]
+# Sample_ID.mtx2 <- Sample_ID.mtx2[!(row.names(Sample_ID.mtx2) %in% MT_genes),]
+
+y <- DGEList(counts=Sample_ID.mtx2, group=colnames(Sample_ID.mtx2))
+y <- calcNormFactors(y, method = "TMM")
+tmm <- cpm(y, normalized.lib.sizes = TRUE, log=T)
+res.pca <- prcomp(t(tmm), scale = TRUE)
+stdev <- res.pca$sdev
+eigValues = (stdev)^2  ## EigenValues
+variance_explained <- eigValues/sum(eigValues)
+
+# metadata
+df <- as.data.frame(res.pca$x)
+df$anno1 <- strsplit(colnames(Sample_ID.mtx2), '@') %>% sapply(.,`[[`,2)
+df$anno1 <- factor(df$anno1, levels = cts.selected)
+df$Sample_ID <- strsplit(colnames(Sample_ID.mtx2), '@') %>% sapply(.,`[[`,1)
+df$patient <- sapply(strsplit(df$Sample_ID, '-'), "[[", 1)
+df$biopsy_location <-  sapply(strsplit(df$Sample_ID, '-'), "[[", 2)
+df_patient_race <- unique(seurat@meta.data[, c('Patient_ID', 'Race')])
+df$ethnicity <- mapvalues(df$patient, df_patient_race$Patient_ID, df_patient_race$Race, warn_missing = F)
+```
+
+
+```{r}
+FilePath.pdf1 <- paste0(out.dir, 'plots_ipaa_and_all_controls/union_AllGenes_PC12.pdf') 
+
+cts.plot <- cts.selected
+df2 <- df[df$anno1 %in% cts.plot,]
+
+pdf(paste0(FilePath.pdf1), width = 9, height = 8)
+ggplot(df2, aes(x = PC1, y = PC2, label = Sample_ID)) +
+  geom_point(aes(shape = ethnicity, fill = anno1), size = 3, alpha = 0.86) +
+  # scale_fill_manual(values=manual_colors_rc2_location)+
+  scale_shape_manual(values = c(21,22, 23, 24,25))+
+  # geom_text_repel(size = 2, max.overlaps = 200)+
+  theme_bw()+
+  theme(panel.grid =element_blank(),
+        panel.border = element_blank(),
+        plot.title = element_text(size = 12, face = 'bold', hjust = 0.5),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title = element_text(size = 12, face = 'bold'),
+        axis.line = element_line(size = 0.5),
+        legend.text=element_text(size=7))+
+  labs(x = "PC 1 (" %&% percent(variance_explained[[1]]) %&% " explained variance)", 
+       y = "PC 2 (" %&% percent(variance_explained[[2]]) %&% " explained variance)", title = "")+
+  guides(fill = guide_legend(override.aes = list(shape = c(21))))
+dev.off()
+```
+
+
+```{r}
+FilePath.pdf1 <- paste0(out.dir, 'plots_ipaa_and_all_controls/union_AllGenes_PC12_location_ct.pdf') 
+
+cts.plot <- cts.selected
+df2 <- df[df$anno1 %in% cts.plot,]
+
+pdf(paste0(FilePath.pdf1), width = 9, height = 8)
+ggplot(df2, aes(x = PC1, y = PC2, label = Sample_ID)) +
+  geom_point(aes(shape = biopsy_location, fill = anno1), size = 3, alpha = 0.86) +
+  # scale_fill_manual(values=manual_colors_rc2_location)+
+  scale_shape_manual(values = c(21,22, 23, 24,25))+
+  # geom_text_repel(size = 2, max.overlaps = 200)+
+  theme_bw()+
+  theme(panel.grid =element_blank(),
+        panel.border = element_blank(),
+        plot.title = element_text(size = 12, face = 'bold', hjust = 0.5),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title = element_text(size = 12, face = 'bold'),
+        axis.line = element_line(size = 0.5),
+        legend.text=element_text(size=7))+
+  labs(x = "PC 1 (" %&% percent(variance_explained[[1]]) %&% " explained variance)", 
+       y = "PC 2 (" %&% percent(variance_explained[[2]]) %&% " explained variance)", title = "")+
+  guides(fill = guide_legend(override.aes = list(shape = c(21))))
+dev.off()
+```
+
+```{r}
+FilePath.pdf1 <- paste0(out.dir, 'plots_ipaa_and_all_controls/union_AllGenes_PC34.pdf') 
+
+cts.plot <- cts.selected
+df2 <- df[df$anno1 %in% cts.plot,]
+
+pdf(paste0(FilePath.pdf1), width = 9, height = 8)
+ggplot(df2, aes(x = PC3, y = PC4, label = Sample_ID)) +
+  geom_point(aes(shape = ethnicity, fill = anno1), size = 3, alpha = 0.86) +
+  # scale_fill_manual(values=manual_colors_rc2_location)+
+  scale_shape_manual(values = c(21,22, 23, 24,25))+
+  # geom_text_repel(size = 2, max.overlaps = 200)+
+  theme_bw()+
+  theme(panel.grid =element_blank(),
+        panel.border = element_blank(),
+        plot.title = element_text(size = 12, face = 'bold', hjust = 0.5),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title = element_text(size = 12, face = 'bold'),
+        axis.line = element_line(size = 0.5),
+        legend.text=element_text(size=7))+
+  labs(x = "PC 3 (" %&% percent(variance_explained[[3]]) %&% " explained variance)", 
+       y = "PC 4 (" %&% percent(variance_explained[[4]]) %&% " explained variance)", title = "")+
+  guides(fill = guide_legend(override.aes = list(shape = c(21))))
+dev.off()
+```
+
+
+
+```{r}
+FilePath.pdf1 <- paste0(out.dir, 'plots_ipaa_and_all_controls/union_AllGenes_PC56.pdf') 
+
+cts.plot <- cts.selected
+df2 <- df[df$anno1 %in% cts.plot,]
+
+pdf(paste0(FilePath.pdf1), width = 9, height = 8)
+ggplot(df2, aes(x = PC5, y = PC6, label = Sample_ID)) +
+  geom_point(aes(shape = ethnicity, fill = anno1), size = 3, alpha = 0.86) +
+  # scale_fill_manual(values=manual_colors_rc2_location)+
+  scale_shape_manual(values = c(21,22, 23, 24,25))+
+  # geom_text_repel(size = 2, max.overlaps = 200)+
+  theme_bw()+
+  theme(panel.grid =element_blank(),
+        panel.border = element_blank(),
+        plot.title = element_text(size = 12, face = 'bold', hjust = 0.5),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title = element_text(size = 12, face = 'bold'),
+        axis.line = element_line(size = 0.5),
+        legend.text=element_text(size=7))+
+  labs(x = "PC 5 (" %&% percent(variance_explained[[5]]) %&% " explained variance)", 
+       y = "PC 6 (" %&% percent(variance_explained[[6]]) %&% " explained variance)", title = "")+
+  guides(fill = guide_legend(override.aes = list(shape = c(21))))
+dev.off()
+```
+
+
+
+```{r}
+FilePath.pdf1 <- paste0(out.dir, 'plots_ipaa_and_all_controls/union_AllGenes_PC78.pdf') 
+
+cts.plot <- cts.selected
+df2 <- df[df$anno1 %in% cts.plot,]
+
+pdf(paste0(FilePath.pdf1), width = 9, height = 8)
+ggplot(df2, aes(x = PC7, y = PC8, label = Sample_ID)) +
+  geom_point(aes(shape = ethnicity, fill = anno1), size = 3, alpha = 0.86) +
+  # scale_fill_manual(values=manual_colors_rc2_location)+
+  scale_shape_manual(values = c(21,22, 23, 24,25))+
+  # geom_text_repel(size = 2, max.overlaps = 200)+
+  theme_bw()+
+  theme(panel.grid =element_blank(),
+        panel.border = element_blank(),
+        plot.title = element_text(size = 12, face = 'bold', hjust = 0.5),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title = element_text(size = 12, face = 'bold'),
+        axis.line = element_line(size = 0.5),
+        legend.text=element_text(size=7))+
+  labs(x = "PC 7 (" %&% percent(variance_explained[[7]]) %&% " explained variance)", 
+       y = "PC 8 (" %&% percent(variance_explained[[8]]) %&% " explained variance)", title = "")+
+  guides(fill = guide_legend(override.aes = list(shape = c(21))))
+dev.off()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
